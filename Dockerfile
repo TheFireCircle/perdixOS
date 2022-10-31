@@ -2,7 +2,7 @@ FROM node:lts-alpine
 
 RUN apk add --no-cache git
 
-WORKDIR daedalOS
+WORKDIR perdixOS
 COPY . .
 
 RUN yarn

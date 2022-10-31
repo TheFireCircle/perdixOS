@@ -1,4 +1,4 @@
-## 🌌 **daedalOS** 🌌
+## 🌌 **** 🌌
 
 ### _Desktop environment in the browser_
 
@@ -16,8 +16,8 @@
 - [Git](https://git-scm.com/downloads)
 
 ```
-git clone https://github.com/DustinBrett/daedalOS.git
-cd daedalOS
+git clone https://github.com/DustinBrett/.git
+cd 
 ```
 
 ### Yarn
@@ -48,8 +48,8 @@ yarn start
 - [Docker Desktop](https://www.docker.com/products/docker-desktop)
 
 ```
-docker build -t daedalos .
-docker run -dp 3000:3000 --rm --name daedalos daedalos
+docker build -t  .
+docker run -dp 3000:3000 --rm --name  
 ```
 
 # System 🧠

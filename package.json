@@ -1,11 +1,9 @@
 {
-  "name": "daedalos",
-  "version": "2.0.0",
-  "description": "Desktop environment in the browser",
+  "name": "perdixos",
+  "version": "0.0.1",
+  "description": "Mobile desktop environment in the browser",
   "author": {
-    "name": "Dustin Brett",
-    "email": "dustinbrett@gmail.com",
-    "url": "https://dustinbrett.com"
+    "name": "Andreas Lechner"
   },
   "license": "MIT",
   "browserslist": [
@@ -21,8 +19,8 @@
     "build:robots": "node scripts/robots.js",
     "build:search": "node scripts/searchIndex.js",
     "deploy": "yarn build:robots && next export && yarn build:html && yarn build:js",
-    "docker:build": "docker build -t daedalos .",
-    "docker:run": "docker run -dp 3000:3000 --rm --name daedalos daedalos",
+    "docker:build": "docker build -t perdixos .",
+    "docker:run": "docker run -dp 3000:3000 --rm --name perdixos perdixos",
     "dev": "next dev",
     "eslint": "eslint --report-unused-disable-directives .",
     "export": "next export",
