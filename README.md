@@ -1,13 +1,7 @@
-## 🌌 **** 🌌
-
-### _Desktop environment in the browser_
+### _Mobile desktop environment in the browser_
 
 ![Stars](https://badgen.net/github/stars/DustinBrett/x)
 ![License](https://badgen.net/github/license/DustinBrett/x)
-
-# Feature Overview
-
-[![Feature Overview](https://img.youtube.com/vi/CkvKPspIPLs/mqdefault.jpg)](http://www.youtube.com/watch?v=CkvKPspIPLs)
 
 # Try It 🏁
 
