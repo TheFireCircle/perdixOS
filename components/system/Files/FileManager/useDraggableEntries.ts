@@ -1,6 +1,6 @@
 import type { FocusEntryFunctions } from "components/system/Files/FileManager/useFocusableEntries";
 import { useSession } from "contexts/session";
-import { dirname, join } from "path";
+import { join } from "path";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Position } from "react-rnd";
@@ -15,7 +15,7 @@ type DraggableEntryProps = {
   draggable: boolean;
   onDragEnd: React.DragEventHandler;
   onDragStart: React.DragEventHandler;
-  style: React.CSSProperties;
+  style?: React.CSSProperties;
 };
 
 type DraggableEntry = (
@@ -42,11 +42,15 @@ const useDraggableEntries = (
   const { iconPositions, sortOrders, setIconPositions, setSortOrder } =
     useSession();
   const dragImageRef = useRef<HTMLImageElement | null>();
-  const dragPositionRef = useRef<DragPosition>({});
+  const dragPositionRef = useRef<DragPosition>(
+    Object.create(null) as DragPosition
+  );
   const draggedOnceRef = useRef(false);
   const onDragging = ({ clientX: x, clientY: y }: DragEvent): void => {
     dragPositionRef.current = { ...dragPositionRef.current, x, y };
   };
+  const isMainContainer =
+    fileManagerRef.current?.parentElement?.tagName === "MAIN";
   const onDragEnd =
     (entryUrl: string): React.DragEventHandler =>
     (event) => {
@@ -110,6 +114,8 @@ const useDraggableEntries = (
       );
 
       if (focusedEntries.length > 1 && dragImageRef.current) {
+        const iconPositionKeys = Object.keys(iconPositions);
+
         if (
           allowMoving &&
           !draggedOnceRef.current &&
@@ -117,21 +123,21 @@ const useDraggableEntries = (
             fileManagerRef.current?.lastElementChild &&
             fileManagerRef.current.lastElementChild !==
               lastfileManagerChildRef.current) ||
-            Object.keys(iconPositions).some((key) => dirname(key) === entryUrl))
+            focusedEntries.every((entryFile) =>
+              iconPositionKeys.includes(`${entryUrl}/${entryFile}`)
+            ))
         ) {
           draggedOnceRef.current = true;
         }
 
-        event.dataTransfer.setDragImage(
-          dragImageRef.current,
-          "mozInputSource" in event.nativeEvent &&
-            fileManagerRef.current?.parentElement?.tagName === "MAIN"
-            ? event.nativeEvent.clientX
-            : event.nativeEvent.offsetX,
-          draggedOnceRef.current
-            ? event.nativeEvent.clientY
-            : event.nativeEvent.offsetY
-        );
+        const dragX = isMainContainer
+          ? event.nativeEvent.clientX
+          : event.nativeEvent.offsetX;
+        const dragY = draggedOnceRef.current
+          ? event.nativeEvent.clientY
+          : event.nativeEvent.offsetY;
+
+        event.dataTransfer.setDragImage(dragImageRef.current, dragX, dragY);
 
         if (allowMoving && !draggedOnceRef.current) {
           draggedOnceRef.current = true;
@@ -147,7 +153,7 @@ const useDraggableEntries = (
                 offsetX: event.nativeEvent.offsetX,
                 offsetY: event.nativeEvent.offsetY,
               }
-            : {};
+            : (Object.create(null) as DragPosition);
         fileManagerRef.current?.addEventListener("dragover", onDragging, {
           passive: true,
         });
@@ -161,6 +167,7 @@ const useDraggableEntries = (
 
       if (focusedElements.length > 1) {
         if (!dragImageRef.current) dragImageRef.current = new Image();
+        else dragImageRef.current.src = "";
 
         const htmlToImage = await getHtmlToImage();
         const newDragImage = await htmlToImage?.toPng(fileManagerRef.current, {
@@ -213,7 +220,7 @@ const useDraggableEntries = (
     onDragEnd: onDragEnd(entryUrl),
     onDragOver: onDragOver(file),
     onDragStart: onDragStart(entryUrl, file, renaming),
-    style: iconPositions[join(entryUrl, file)],
+    style: isMainContainer ? iconPositions[join(entryUrl, file)] : undefined,
   });
 };
 

@@ -30,6 +30,7 @@ const KEYVAL_STORE_NAME = "keyval";
 const KEYVAL_DB = `${KEYVAL_STORE_NAME}-store`;
 
 const KNOWN_IDB_DBS = [
+  "/classicube",
   "/data/saves",
   "ejs-bios",
   "ejs-roms",
@@ -141,14 +142,16 @@ const getKeyValStore = (): ReturnType<typeof openDB> =>
   });
 
 export const getFileSystemHandles = async (): Promise<FileSystemHandles> => {
-  if (!(await supportsIndexedDB())) return {};
+  if (!(await supportsIndexedDB())) {
+    return Object.create(null) as FileSystemHandles;
+  }
 
   const db = await getKeyValStore();
 
   return (
     (await (<Promise<FileSystemHandles>>(
       db.get(KEYVAL_STORE_NAME, FS_HANDLES)
-    ))) || {}
+    ))) || (Object.create(null) as FileSystemHandles)
   );
 };
 

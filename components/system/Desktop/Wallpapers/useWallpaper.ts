@@ -60,8 +60,7 @@ const useWallpaper = (
   }, [desktopRef, wallpaperWorker]);
   const loadWallpaper = useCallback(() => {
     if (desktopRef.current) {
-      // eslint-disable-next-line no-undef-init, unicorn/no-useless-undefined
-      let config: WallpaperConfig | undefined = undefined;
+      let config: WallpaperConfig | undefined;
 
       if (wallpaperName === "VANTA") {
         config = { ...vantaConfig };
@@ -221,12 +220,8 @@ const useWallpaper = (
 
   useEffect(() => {
     if (sessionLoaded) {
-      if (wallpaperName) {
-        if (WALLPAPER_WORKER_NAMES.includes(wallpaperName)) {
-          loadWallpaper();
-        } else {
-          loadFileWallpaper().catch(loadWallpaper);
-        }
+      if (wallpaperName && !WALLPAPER_WORKER_NAMES.includes(wallpaperName)) {
+        loadFileWallpaper().catch(loadWallpaper);
       } else {
         loadWallpaper();
       }
