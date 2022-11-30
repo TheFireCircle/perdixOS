@@ -156,18 +156,19 @@ const Clock: FC = () => {
     }
   }, [currentWorker, supportsOffscreenCanvas]);
 
-  if (!time) return <></>;
+  // eslint-disable-next-line unicorn/no-null
+  if (!time) return null;
 
   return (
     <StyledClock
       ref={supportsOffscreenCanvas ? clockCallbackRef : undefined}
-      aria-label={!supportsOffscreenCanvas ? "Clock" : undefined}
+      aria-label="Clock"
       onClick={easterEggOnClick}
       title={date}
       suppressHydrationWarning
       {...clockContextMenu}
     >
-      {!supportsOffscreenCanvas ? time : undefined}
+      {supportsOffscreenCanvas ? undefined : time}
     </StyledClock>
   );
 };
