@@ -32,6 +32,8 @@ export type Views = Record<string, FileManagerViewNames>;
 
 export type ClockSource = "local" | "ntp";
 
+export type SurfaceMode = "auto" | "desktop" | "mobile";
+
 export type RecentFiles = [string, string, string][];
 
 export type IconPosition = {
@@ -51,6 +53,7 @@ export type SessionData = {
   recentFiles: RecentFiles;
   runHistory: string[];
   sortOrders: SortOrders;
+  surfaceMode?: SurfaceMode;
   themeName: ThemeName;
   views: Views;
   wallpaperFit: WallpaperFit;
@@ -62,6 +65,7 @@ export type SessionContextState = SessionData & {
   foregroundId: string;
   sessionLoaded: boolean;
   stackOrder: string[];
+  surfaceMode: SurfaceMode;
 };
 
 export type SessionContextActions = {
@@ -81,6 +85,7 @@ export type SessionContextActions = {
     sortBy?: SortBy,
     ascending?: boolean
   ) => void;
+  setSurfaceMode: React.Dispatch<React.SetStateAction<SurfaceMode>>;
   setThemeName: React.Dispatch<React.SetStateAction<ThemeName>>;
   setViews: React.Dispatch<React.SetStateAction<Views>>;
   setWallpaper: (image: string, fit?: WallpaperFit) => void;

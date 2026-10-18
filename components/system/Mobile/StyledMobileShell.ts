@@ -1,12 +1,19 @@
-import styled from "styled-components";
+import { css, styled } from "styled-components";
+import { type SurfaceMode } from "contexts/session/types";
 
-const StyledMobileShell = styled.div`
+const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
+  display: ${({ $surfaceMode }) =>
+    $surfaceMode === "mobile" ? "block" : "none"};
   inset: 0;
   pointer-events: none;
   position: absolute;
 
-  @media (width >= 761px) {
-    display: none;
+  @media (width <= 760px) {
+    ${({ $surfaceMode }) =>
+      $surfaceMode === "auto" &&
+      css`
+        display: block;
+      `}
   }
 
   .mobile-home {

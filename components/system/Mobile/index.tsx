@@ -3,9 +3,14 @@ import FileManager from "components/system/Files/FileManager";
 import StyledMobileShell from "components/system/Mobile/StyledMobileShell";
 import { useProcesses, useProcessesActions } from "contexts/process";
 import { useForegroundId, useStackOrder } from "contexts/session";
+import { type SurfaceMode } from "contexts/session/types";
 import { START_MENU_PATH } from "utils/constants";
 
-const MobileShell: FC = () => {
+type MobileShellProps = {
+  surfaceMode: SurfaceMode;
+};
+
+const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const [now, setNow] = useState(() => new Date());
   const [recentsOpen, setRecentsOpen] = useState(false);
   const processes = useProcesses();
@@ -53,15 +58,15 @@ const MobileShell: FC = () => {
   };
 
   return (
-    <StyledMobileShell>
+    <StyledMobileShell $surfaceMode={surfaceMode}>
       <section aria-label="Startbildschirm" className="mobile-home">
-        <div className="mobile-clock">
+        <div className="mobile-clock" suppressHydrationWarning>
           {new Intl.DateTimeFormat("de-DE", {
             hour: "2-digit",
             minute: "2-digit",
           }).format(now)}
         </div>
-        <div className="mobile-date">
+        <div className="mobile-date" suppressHydrationWarning>
           {new Intl.DateTimeFormat("de-DE", {
             dateStyle: "full",
           }).format(now)}
@@ -75,7 +80,7 @@ const MobileShell: FC = () => {
         />
       </section>
       <div aria-label="Statusleiste" className="mobile-status">
-        <span>
+        <span suppressHydrationWarning>
           {new Intl.DateTimeFormat("de-DE", {
             hour: "2-digit",
             minute: "2-digit",

@@ -12,6 +12,7 @@ import {
   type SessionContextState,
   type SessionData,
   type SortOrders,
+  type SurfaceMode,
   type Views,
   type WallpaperFit,
   type WindowStates,
@@ -72,6 +73,7 @@ const useSessionContextState = (
   const [sortOrders, setSortOrders] = useState(
     Object.create(null) as SortOrders
   );
+  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("auto");
   const [views, setViews] = useState(Object.create(null) as Views);
   const [iconPositions, setIconPositions] = useState(
     Object.create(null) as IconPositions
@@ -215,6 +217,7 @@ const useSessionContextState = (
             recentFiles,
             runHistory,
             sortOrders,
+            surfaceMode,
             themeName,
             views,
             wallpaperFit,
@@ -236,6 +239,7 @@ const useSessionContextState = (
     recentFiles,
     runHistory,
     sessionLoaded,
+    surfaceMode,
     sortOrders,
     themeName,
     views,
@@ -281,6 +285,12 @@ const useSessionContextState = (
           setAiEnabled(session.aiEnabled);
         }
         if (session.themeName) setThemeName(session.themeName);
+        if (
+          session.surfaceMode === "desktop" ||
+          session.surfaceMode === "mobile"
+        ) {
+          setSurfaceMode(session.surfaceMode);
+        }
         if (session.wallpaperImage) {
           setWallpaper(session.wallpaperImage, session.wallpaperFit);
         }
@@ -417,6 +427,7 @@ const useSessionContextState = (
     setIconPositions: setAndUpdateIconPositions,
     setRunHistory,
     setSortOrder,
+    setSurfaceMode,
     setThemeName,
     setViews,
     setWallpaper,
@@ -435,6 +446,7 @@ const useSessionContextState = (
     sessionLoaded,
     sortOrders,
     stackOrder,
+    surfaceMode,
     themeName,
     views,
     wallpaperFit,

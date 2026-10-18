@@ -45,6 +45,9 @@ export const useSortOrder = (directory: string): Partial<SortOrder> =>
 export const useStackOrder = (): string[] =>
   useStateSelector((state) => state.stackOrder);
 
+export const useSurfaceMode = (): SessionContextState["surfaceMode"] =>
+  useStateSelector((state) => state.surfaceMode);
+
 export const useThemeName = (): SessionContextState["themeName"] =>
   useStateSelector((state) => state.themeName);
 

@@ -1,6 +1,39 @@
-import styled from "styled-components";
+import { css, styled } from "styled-components";
+import { type SurfaceMode } from "contexts/session/types";
 
-const StyledDesktop = styled.main`
+const mobileSurfaceStyles = css`
+  > [aria-label="Desktop"],
+  > nav[aria-label="Taskbar"] {
+    display: none;
+  }
+
+  > div.react-draggable {
+    height: auto !important;
+    inset: calc(28px + env(safe-area-inset-top, 0px)) 0
+      calc(28px + env(safe-area-inset-bottom, 0px)) !important;
+    position: fixed !important;
+    transform: none !important;
+    width: auto !important;
+  }
+
+  > div.react-draggable > section[role="dialog"] {
+    border-radius: 0;
+    box-shadow: none;
+    height: 100% !important;
+    outline: 0;
+    width: 100% !important;
+
+    > div {
+      border-radius: 0;
+    }
+  }
+
+  > div.react-draggable > section[role="dialog"] header {
+    display: none;
+  }
+`;
+
+const StyledDesktop = styled.main<{ $surfaceMode: SurfaceMode }>`
   background-color: transparent;
   contain: strict;
   height: 100%;
@@ -37,34 +70,10 @@ const StyledDesktop = styled.main`
     z-index: -1;
   }
 
+  ${({ $surfaceMode }) => $surfaceMode === "mobile" && mobileSurfaceStyles}
+
   @media (width <= 760px) {
-    > [aria-label="Desktop"],
-    > nav[aria-label="Taskbar"] {
-      display: none;
-    }
-
-    > div.react-draggable {
-      height: auto !important;
-      inset: calc(28px + env(safe-area-inset-top, 0px)) 0
-        calc(28px + env(safe-area-inset-bottom, 0px)) !important;
-      position: fixed !important;
-      transform: none !important;
-      width: auto !important;
-    }
-
-    > div.react-draggable > section[role="dialog"] {
-      border-radius: 0;
-      box-shadow: none;
-      outline: 0;
-
-      > div {
-        border-radius: 0;
-      }
-    }
-
-    > div.react-draggable > section[role="dialog"] header {
-      display: none;
-    }
+    ${({ $surfaceMode }) => $surfaceMode === "auto" && mobileSurfaceStyles}
   }
 `;
 
