@@ -35,18 +35,223 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     z-index: 0;
   }
 
-  .mobile-clock {
-    color: #fff;
-    font-size: 46px;
-    font-weight: 300;
-    line-height: 1;
-    margin: 5vh 0 5px;
+  .mobile-home-empty-surface {
+    background: transparent;
+    border: 0;
+    inset: 0;
+    position: absolute;
+    touch-action: none;
+    width: 100%;
+    z-index: 0;
   }
 
-  .mobile-date {
-    color: rgb(255 255 255 / 76%);
-    font-size: 14px;
-    margin-bottom: 8vh;
+  .mobile-clock-widget-wrap {
+    margin: 4vh 0 18px;
+    position: relative;
+    z-index: 4;
+  }
+
+  .clock-widget-time {
+    font-size: 54px;
+    font-weight: 300;
+    line-height: 1;
+  }
+
+  .clock-widget-date {
+    color: rgb(255 255 255 / 82%);
+    font-size: 13px;
+    margin-top: 8px;
+  }
+
+  .mobile-clock-widget {
+    align-items: flex-start;
+    background: rgb(255 255 255 / 17%);
+    border: 1px solid rgb(255 255 255 / 24%);
+    border-radius: 8px;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    font: inherit;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    padding: 14px 18px;
+    text-align: left;
+    touch-action: none;
+    user-select: none;
+    width: 100%;
+
+    &.size-compact {
+      min-height: 104px;
+      width: min(100%, 190px);
+
+      .clock-widget-time {
+        font-size: 34px;
+      }
+    }
+
+    &.size-wide {
+      min-height: 124px;
+
+      .clock-widget-time {
+        font-size: 54px;
+      }
+    }
+
+    &.size-large {
+      min-height: 190px;
+
+      .clock-widget-time {
+        font-size: 70px;
+      }
+
+      .clock-widget-date {
+        font-size: 15px;
+      }
+    }
+  }
+
+  .clock-widget-context-menu {
+    background: rgb(19 31 35 / 96%);
+    border: 1px solid rgb(255 255 255 / 20%);
+    border-radius: 7px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+    display: grid;
+    gap: 4px;
+    left: 10px;
+    min-width: 190px;
+    padding: 8px;
+    position: absolute;
+    top: calc(100% - 12px);
+    z-index: 10;
+
+    button {
+      background: transparent;
+      border: 0;
+      border-radius: 4px;
+      color: #fff;
+      font: inherit;
+      font-size: 13px;
+      min-height: 40px;
+      padding: 0 10px;
+      text-align: left;
+
+      &[aria-checked="true"] {
+        background: rgb(22 141 135 / 45%);
+      }
+    }
+  }
+
+  .clock-widget-sizes {
+    border-top: 1px solid rgb(255 255 255 / 18%);
+    display: grid;
+    gap: 2px;
+    grid-template-columns: 1fr;
+    padding-top: 4px;
+  }
+
+  .mobile-widgets-trigger {
+    background: #f1f4f2;
+    border: 0;
+    border-radius: 18px;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 24%);
+    color: #24443a;
+    font: inherit;
+    font-size: 13px;
+    min-height: 40px;
+    padding: 0 18px;
+    position: absolute;
+    transform: translate(-50%, -50%);
+    z-index: 3;
+  }
+
+  .mobile-home-app-grid,
+  .mobile-home-empty {
+    position: relative;
+    z-index: 1;
+  }
+
+  .mobile-widget-picker {
+    animation: notification-shade-enter 180ms ease-out both;
+    background: #e7ebed;
+    border-radius: 14px 14px 0 0;
+    bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    color: #263238;
+    display: flex;
+    flex-direction: column;
+    inset-inline: 0;
+    min-height: 250px;
+    padding: env(safe-area-inset-top, 0) 16px 18px;
+    pointer-events: auto;
+    position: absolute;
+    z-index: 100001;
+  }
+
+  .widget-picker-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    min-height: 54px;
+
+    h2 {
+      font-size: 18px;
+      font-weight: 500;
+      margin: 0;
+    }
+
+    button {
+      background: transparent;
+      border: 0;
+      color: #52636a;
+      font-size: 25px;
+      height: 40px;
+      padding: 0;
+      width: 40px;
+    }
+  }
+
+  .widget-picker-entry {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #d4dcdf;
+    border-radius: 6px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 88px minmax(0, 1fr) auto;
+    padding: 12px;
+  }
+
+  .widget-picker-copy {
+    min-width: 0;
+
+    h3 {
+      font-size: 13px;
+      margin: 0 0 4px;
+    }
+
+    p {
+      color: #637178;
+      font-size: 11px;
+      line-height: 1.3;
+      margin: 0;
+    }
+  }
+
+  .widget-picker-entry > button {
+    background: #168d87;
+    border: 0;
+    border-radius: 16px;
+    color: #fff;
+    font: inherit;
+    font-size: 11px;
+    min-height: 32px;
+    padding: 0 10px;
+    white-space: nowrap;
+
+    &:disabled {
+      background: #dce2e4;
+      color: #52636a;
+    }
   }
 
   .mobile-home-app-grid,
@@ -807,6 +1012,30 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     font-size: 14px;
     margin: 30px 0;
     text-align: center;
+  }
+
+  .widget-picker-clock-preview {
+    align-content: center;
+    background: linear-gradient(145deg, #28645e, #665b43);
+    border-radius: 5px;
+    color: #fff;
+    display: grid;
+    height: 72px;
+    justify-items: center;
+
+    span:first-child {
+      font-size: 20px;
+      font-weight: 300;
+    }
+
+    span:last-child {
+      font-size: 8px;
+      line-height: 1.2;
+      max-width: 78px;
+      overflow: hidden;
+      text-align: center;
+      white-space: nowrap;
+    }
   }
 `;
 

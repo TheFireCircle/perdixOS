@@ -30,6 +30,10 @@ export const useForegroundId = (): string =>
 export const useHomeApps = (): string[] =>
   useStateSelector((state) => state.homeApps);
 
+export const useHomeClockWidgetSize =
+  (): SessionContextState["homeClockWidgetSize"] =>
+    useStateSelector((state) => state.homeClockWidgetSize);
+
 export const useIconPositions = (): SessionContextState["iconPositions"] =>
   useStateSelector((state) => state.iconPositions);
 

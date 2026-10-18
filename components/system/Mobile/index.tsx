@@ -5,10 +5,14 @@ import processDirectory from "contexts/process/directory";
 import {
   useForegroundId,
   useHomeApps,
+  useHomeClockWidgetSize,
   useSessionActions,
   useStackOrder,
 } from "contexts/session";
-import { type SurfaceMode } from "contexts/session/types";
+import {
+  type HomeClockWidgetSize,
+  type SurfaceMode,
+} from "contexts/session/types";
 import { PROCESS_DELIMITER } from "utils/constants";
 import {
   SYSTEM_NOTIFICATION_EVENT,
@@ -64,12 +68,21 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [appDrawerOpen, setAppDrawerOpen] = useState(false);
   const [appSearch, setAppSearch] = useState("");
+  const [widgetPickerOpen, setWidgetPickerOpen] = useState(false);
+  const [widgetButtonVisible, setWidgetButtonVisible] = useState(false);
+  const [widgetButtonPosition, setWidgetButtonPosition] = useState({
+    x: 0,
+    y: 0,
+  });
+  const [clockWidgetMenuOpen, setClockWidgetMenuOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [quickSettingsExpanded, setQuickSettingsExpanded] = useState(false);
   const [brightness, setBrightness] = useState(82);
   const [quickSettings, setQuickSettings] = useState(INITIAL_QUICK_SETTINGS);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const notificationIdRef = useRef(0);
+  const emptyPressTimerRef = useRef<number | undefined>(undefined);
+  const widgetPressTimerRef = useRef<number | undefined>(undefined);
   const statusPointerStartRef = useRef<number | undefined>(undefined);
   const pulledDownRef = useRef(false);
   const appDrawerPointerStartRef = useRef<number | undefined>(undefined);
@@ -78,7 +91,8 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const foregroundId = useForegroundId();
   const stackOrder = useStackOrder();
   const homeApps = useHomeApps();
-  const { setHomeApps } = useSessionActions();
+  const homeClockWidgetSize = useHomeClockWidgetSize();
+  const { setHomeApps, setHomeClockWidgetSize } = useSessionActions();
   const { closeWithTransition, minimize, open } = useProcessesActions();
   const homeScreenApps = homeApps.flatMap((id) => {
     const app = AVAILABLE_APPS_BY_ID.get(id);
@@ -167,10 +181,78 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
         ? currentHomeApps.filter((appId) => appId !== id)
         : [...currentHomeApps, id]
     );
+  const addClockWidget = (): void => {
+    setHomeClockWidgetSize((currentSize) => currentSize || "wide");
+    setWidgetPickerOpen(false);
+    setWidgetButtonVisible(false);
+  };
+  const removeClockWidget = (): void => {
+    setHomeClockWidgetSize(undefined);
+    setClockWidgetMenuOpen(false);
+  };
+  const changeClockWidgetSize = (size: HomeClockWidgetSize): void => {
+    setHomeClockWidgetSize(size);
+    setClockWidgetMenuOpen(false);
+  };
+  const startEmptySpaceLongPress: React.PointerEventHandler<HTMLElement> = (
+    event
+  ) => {
+    if (
+      event.target !== event.currentTarget ||
+      (event.pointerType === "mouse" && event.button !== 0)
+    ) {
+      return;
+    }
+
+    const { clientX, clientY, currentTarget } = event;
+
+    emptyPressTimerRef.current = window.setTimeout(() => {
+      const bounds = currentTarget.getBoundingClientRect();
+
+      setWidgetButtonPosition({
+        x: Math.min(Math.max(clientX - bounds.left, 64), bounds.width - 64),
+        y: Math.min(
+          Math.max(clientY - bounds.top - 52, 72),
+          bounds.height - 72
+        ),
+      });
+      setWidgetButtonVisible(true);
+    }, 500);
+  };
+  const clearEmptySpaceLongPress = (): void => {
+    if (emptyPressTimerRef.current !== undefined) {
+      window.clearTimeout(emptyPressTimerRef.current);
+      emptyPressTimerRef.current = undefined;
+    }
+  };
+  const startClockWidgetLongPress: React.PointerEventHandler<HTMLElement> = (
+    event
+  ) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    widgetPressTimerRef.current = window.setTimeout(() => {
+      setClockWidgetMenuOpen(true);
+    }, 500);
+  };
+  const clearClockWidgetLongPress = (): void => {
+    if (widgetPressTimerRef.current !== undefined) {
+      window.clearTimeout(widgetPressTimerRef.current);
+      widgetPressTimerRef.current = undefined;
+    }
+  };
   const openAppDrawer = (): void => {
     setNotificationCenterOpen(false);
     setRecentsOpen(false);
+    setWidgetPickerOpen(false);
+    setClockWidgetMenuOpen(false);
+    setWidgetButtonVisible(false);
     setAppDrawerOpen(true);
+  };
+  const openWidgetPicker = (): void => {
+    setAppDrawerOpen(false);
+    setWidgetButtonVisible(false);
+    setClockWidgetMenuOpen(false);
+    setWidgetPickerOpen(true);
   };
   const startAppDrawerPull: React.PointerEventHandler<HTMLButtonElement> = (
     event
@@ -218,6 +300,9 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
     }
 
     setAppDrawerOpen(false);
+    setWidgetPickerOpen(false);
+    setClockWidgetMenuOpen(false);
+    setWidgetButtonVisible(false);
     setRecentsOpen(false);
     setNotificationCenterOpen((isOpen) => !isOpen);
   };
@@ -249,17 +334,99 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   return (
     <StyledMobileShell $surfaceMode={surfaceMode}>
       <section aria-label="Startbildschirm" className="mobile-home">
-        <div className="mobile-clock" suppressHydrationWarning>
-          {new Intl.DateTimeFormat("de-DE", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }).format(now)}
-        </div>
-        <div className="mobile-date" suppressHydrationWarning>
-          {new Intl.DateTimeFormat("de-DE", {
-            dateStyle: "full",
-          }).format(now)}
-        </div>
+        <button
+          aria-label="Widgetoptionen öffnen"
+          className="mobile-home-empty-surface"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            clearEmptySpaceLongPress();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - bounds.left;
+            const y = event.clientY - bounds.top;
+
+            setWidgetButtonPosition({
+              x: Math.min(Math.max(x, 64), bounds.width - 64),
+              y: Math.min(Math.max(y - 52, 72), bounds.height - 72),
+            });
+            setWidgetButtonVisible(true);
+          }}
+          onPointerCancel={clearEmptySpaceLongPress}
+          onPointerDown={startEmptySpaceLongPress}
+          onPointerUp={clearEmptySpaceLongPress}
+          tabIndex={-1}
+          type="button"
+        />
+        {homeClockWidgetSize && (
+          <div className="mobile-clock-widget-wrap">
+            <button
+              aria-label="Uhr- und Datumswidget, lange drücken für Optionen"
+              className={`mobile-clock-widget size-${homeClockWidgetSize}`}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                clearClockWidgetLongPress();
+                setClockWidgetMenuOpen(true);
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "ContextMenu" ||
+                  (event.shiftKey && event.key === "F10")
+                ) {
+                  event.preventDefault();
+                  setClockWidgetMenuOpen(true);
+                }
+              }}
+              onPointerCancel={clearClockWidgetLongPress}
+              onPointerDown={startClockWidgetLongPress}
+              onPointerUp={clearClockWidgetLongPress}
+              type="button"
+            >
+              <span className="clock-widget-time" suppressHydrationWarning>
+                {formattedTime}
+              </span>
+              <span className="clock-widget-date" suppressHydrationWarning>
+                {formattedDate}
+              </span>
+            </button>
+            {clockWidgetMenuOpen && (
+              <div
+                aria-label="Uhr-Widgetoptionen"
+                className="clock-widget-context-menu"
+                role="menu"
+              >
+                <button
+                  onClick={removeClockWidget}
+                  role="menuitem"
+                  type="button"
+                >
+                  Widget entfernen
+                </button>
+                <div
+                  aria-label="Widgetgröße"
+                  className="clock-widget-sizes"
+                  role="group"
+                >
+                  {(
+                    [
+                      ["compact", "Kompakt"],
+                      ["wide", "Breit"],
+                      ["large", "Groß"],
+                    ] as const
+                  ).map(([size, label]) => (
+                    <button
+                      key={size}
+                      aria-checked={homeClockWidgetSize === size}
+                      onClick={() => changeClockWidgetSize(size)}
+                      role="menuitemradio"
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {homeScreenApps.length > 0 ? (
           <ul
             aria-label="Apps auf dem Startbildschirm"
@@ -287,6 +454,19 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             </button>
           </div>
         )}
+        {widgetButtonVisible && (
+          <button
+            className="mobile-widgets-trigger"
+            onClick={openWidgetPicker}
+            style={{
+              left: `${widgetButtonPosition.x}px`,
+              top: `${Math.max(widgetButtonPosition.y - 52, 72)}px`,
+            }}
+            type="button"
+          >
+            Widgets
+          </button>
+        )}
         <button
           aria-label="Appdrawer öffnen"
           className="mobile-app-drawer-handle"
@@ -312,6 +492,48 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           <span>Alle Apps</span>
         </button>
       </section>
+      {widgetPickerOpen && (
+        <section
+          aria-label="Widgets"
+          aria-modal="true"
+          className="mobile-widget-picker"
+          role="dialog"
+        >
+          <div className="app-drawer-handle-indicator" />
+          <header className="widget-picker-header">
+            <h2>Widgets</h2>
+            <button
+              aria-label="Widgetmenü schließen"
+              onClick={() => setWidgetPickerOpen(false)}
+              type="button"
+            >
+              ×
+            </button>
+          </header>
+          <article className="widget-picker-entry">
+            <div aria-hidden="true" className="widget-picker-clock-preview">
+              <span>{formattedTime}</span>
+              <span>{formattedDate}</span>
+            </div>
+            <div className="widget-picker-copy">
+              <h3>Uhr &amp; Datum</h3>
+              <p>Uhrzeit und aktuelles Datum auf dem Startbildschirm.</p>
+            </div>
+            <button
+              aria-label={
+                homeClockWidgetSize
+                  ? "Uhr-Widget ist bereits hinzugefügt"
+                  : "Uhr-Widget hinzufügen"
+              }
+              disabled={Boolean(homeClockWidgetSize)}
+              onClick={addClockWidget}
+              type="button"
+            >
+              {homeClockWidgetSize ? "Hinzugefügt" : "Hinzufügen"}
+            </button>
+          </article>
+        </section>
+      )}
       <div
         aria-expanded={notificationCenterOpen}
         aria-label="Statusleiste, nach unten ziehen für Benachrichtigungen"
@@ -618,6 +840,9 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           aria-label="Zurück: App schließen"
           onClick={() => {
             if (notificationCenterOpen) setNotificationCenterOpen(false);
+            else if (widgetPickerOpen) setWidgetPickerOpen(false);
+            else if (clockWidgetMenuOpen) setClockWidgetMenuOpen(false);
+            else if (widgetButtonVisible) setWidgetButtonVisible(false);
             else if (appDrawerOpen) setAppDrawerOpen(false);
             else if (recentsOpen) setRecentsOpen(false);
             else if (activeProcessId) closeWithTransition(activeProcessId);
@@ -632,6 +857,9 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             setRecentsOpen(false);
             setNotificationCenterOpen(false);
             setAppDrawerOpen(false);
+            setWidgetPickerOpen(false);
+            setClockWidgetMenuOpen(false);
+            setWidgetButtonVisible(false);
 
             Object.entries(processes).forEach(([id, process]) => {
               if (
@@ -653,6 +881,9 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           onClick={() => {
             setAppDrawerOpen(false);
             setNotificationCenterOpen(false);
+            setWidgetPickerOpen(false);
+            setClockWidgetMenuOpen(false);
+            setWidgetButtonVisible(false);
             setRecentsOpen((isOpen) => !isOpen);
           }}
           type="button"

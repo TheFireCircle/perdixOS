@@ -32,6 +32,8 @@ export type Views = Record<string, FileManagerViewNames>;
 
 export type ClockSource = "local" | "ntp";
 
+export type HomeClockWidgetSize = "compact" | "large" | "wide";
+
 export type SurfaceMode = "auto" | "desktop" | "mobile";
 
 export type RecentFiles = [string, string, string][];
@@ -49,6 +51,7 @@ export type SessionData = {
   closeEffect: string;
   cursor: string | undefined;
   homeApps?: string[];
+  homeClockWidgetSize?: HomeClockWidgetSize;
   iconPositions: IconPositions;
   lazyZoo?: boolean;
   recentFiles: RecentFiles;
@@ -80,6 +83,9 @@ export type SessionContextActions = {
   setForegroundId: React.Dispatch<React.SetStateAction<string>>;
   setHaltSession: React.Dispatch<React.SetStateAction<boolean>>;
   setHomeApps: React.Dispatch<React.SetStateAction<string[]>>;
+  setHomeClockWidgetSize: React.Dispatch<
+    React.SetStateAction<HomeClockWidgetSize | undefined>
+  >;
   setIconPositions: React.Dispatch<React.SetStateAction<IconPositions>>;
   setRunHistory: React.Dispatch<React.SetStateAction<string[]>>;
   setSortOrder: (
