@@ -66,6 +66,7 @@ const useSessionContextState = (
   const [cursor, setCursor] = useState<string | undefined>();
   const [aiEnabled, setAiEnabled] = useState<boolean>();
   const [closeEffect, setCloseEffect] = useState(DEFAULT_CLOSE_EFFECT);
+  const [homeApps, setHomeApps] = useState<string[]>([]);
   const [lazyZoo, setLazyZoo] = useState(false);
   const [windowStates, setWindowStates] = useState(
     Object.create(null) as WindowStates
@@ -212,6 +213,7 @@ const useSessionContextState = (
             clockSource,
             closeEffect,
             cursor,
+            homeApps,
             iconPositions,
             lazyZoo,
             recentFiles,
@@ -234,6 +236,7 @@ const useSessionContextState = (
     closeEffect,
     cursor,
     haltSession,
+    homeApps,
     iconPositions,
     lazyZoo,
     recentFiles,
@@ -281,6 +284,7 @@ const useSessionContextState = (
         if (session.clockSource) setClockSource(session.clockSource);
         if (session.closeEffect) setCloseEffect(session.closeEffect);
         if (session.cursor) setCursor(session.cursor);
+        if (Array.isArray(session.homeApps)) setHomeApps(session.homeApps);
         if (typeof session.aiEnabled === "boolean") {
           setAiEnabled(session.aiEnabled);
         }
@@ -424,6 +428,7 @@ const useSessionContextState = (
     setCursor,
     setForegroundId,
     setHaltSession,
+    setHomeApps,
     setIconPositions: setAndUpdateIconPositions,
     setRunHistory,
     setSortOrder,
@@ -440,6 +445,7 @@ const useSessionContextState = (
     closeEffect,
     cursor,
     foregroundId,
+    homeApps,
     iconPositions,
     recentFiles,
     runHistory,

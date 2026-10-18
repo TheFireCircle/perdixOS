@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import FileManager from "components/system/Files/FileManager";
 import StyledMobileShell from "components/system/Mobile/StyledMobileShell";
 import { useProcesses, useProcessesActions } from "contexts/process";
-import { useForegroundId, useStackOrder } from "contexts/session";
+import processDirectory from "contexts/process/directory";
+import {
+  useForegroundId,
+  useHomeApps,
+  useSessionActions,
+  useStackOrder,
+} from "contexts/session";
 import { type SurfaceMode } from "contexts/session/types";
-import { START_MENU_PATH } from "utils/constants";
+import { PROCESS_DELIMITER } from "utils/constants";
 import {
   SYSTEM_NOTIFICATION_EVENT,
   type SystemNotification,
@@ -35,6 +40,21 @@ const INITIAL_QUICK_SETTINGS: Record<QuickSettingKey, boolean> = {
   wifi: true,
 };
 
+const AVAILABLE_APPS = Object.entries(processDirectory)
+  .filter(
+    ([, { dialogProcess, hideTaskbarEntry, icon }]) =>
+      Boolean(icon) && !dialogProcess && !hideTaskbarEntry
+  )
+  .map(([id, { icon, title }]) => ({ icon, id, title }))
+  .sort((left, right) => left.title.localeCompare(right.title, "de"));
+
+const AVAILABLE_APPS_BY_ID = new Map(
+  AVAILABLE_APPS.map((app) => [app.id, app])
+);
+
+const getAppIconUrl = (icon: string): string =>
+  `/System/Icons/48x48/${icon.split("/").at(-1) || "unknown.webp"}`;
+
 type MobileShellProps = {
   surfaceMode: SurfaceMode;
 };
@@ -42,6 +62,8 @@ type MobileShellProps = {
 const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const [now, setNow] = useState(() => new Date());
   const [recentsOpen, setRecentsOpen] = useState(false);
+  const [appDrawerOpen, setAppDrawerOpen] = useState(false);
+  const [appSearch, setAppSearch] = useState("");
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [quickSettingsExpanded, setQuickSettingsExpanded] = useState(false);
   const [brightness, setBrightness] = useState(82);
@@ -50,10 +72,23 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const notificationIdRef = useRef(0);
   const statusPointerStartRef = useRef<number | undefined>(undefined);
   const pulledDownRef = useRef(false);
+  const appDrawerPointerStartRef = useRef<number | undefined>(undefined);
+  const appDrawerGestureTriggeredRef = useRef(false);
   const processes = useProcesses();
   const foregroundId = useForegroundId();
   const stackOrder = useStackOrder();
-  const { closeWithTransition, minimize } = useProcessesActions();
+  const homeApps = useHomeApps();
+  const { setHomeApps } = useSessionActions();
+  const { closeWithTransition, minimize, open } = useProcessesActions();
+  const homeScreenApps = homeApps.flatMap((id) => {
+    const app = AVAILABLE_APPS_BY_ID.get(id);
+
+    return app ? [app] : [];
+  });
+  const normalizedAppSearch = appSearch.trim().toLocaleLowerCase("de");
+  const filteredApps = AVAILABLE_APPS.filter(({ title }) =>
+    title.toLocaleLowerCase("de").includes(normalizedAppSearch)
+  );
   const activeProcessId =
     (foregroundId && !processes[foregroundId]?.minimized && foregroundId) ||
     stackOrder.find((id) => {
@@ -115,6 +150,48 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
 
     setRecentsOpen(false);
   };
+  const launchApp = (id: string, icon: string): void => {
+    const existingProcessId = Object.keys(processes).find(
+      (processId) =>
+        processId === id || processId.startsWith(`${id}${PROCESS_DELIMITER}`)
+    );
+
+    if (existingProcessId) focusProcess(existingProcessId);
+    else open(id, {}, icon);
+
+    setAppDrawerOpen(false);
+  };
+  const toggleHomeApp = (id: string): void =>
+    setHomeApps((currentHomeApps) =>
+      currentHomeApps.includes(id)
+        ? currentHomeApps.filter((appId) => appId !== id)
+        : [...currentHomeApps, id]
+    );
+  const openAppDrawer = (): void => {
+    setNotificationCenterOpen(false);
+    setRecentsOpen(false);
+    setAppDrawerOpen(true);
+  };
+  const startAppDrawerPull: React.PointerEventHandler<HTMLButtonElement> = (
+    event
+  ) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    appDrawerGestureTriggeredRef.current = false;
+    appDrawerPointerStartRef.current = event.clientY;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveAppDrawerPull: React.PointerEventHandler<HTMLButtonElement> = (
+    event
+  ) => {
+    const startY = appDrawerPointerStartRef.current;
+
+    if (startY === undefined || startY - event.clientY < 36) return;
+
+    appDrawerPointerStartRef.current = undefined;
+    appDrawerGestureTriggeredRef.current = true;
+    openAppDrawer();
+  };
   const startStatusPull: React.PointerEventHandler<HTMLDivElement> = (
     event
   ) => {
@@ -140,8 +217,9 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
       return;
     }
 
+    setAppDrawerOpen(false);
     setRecentsOpen(false);
-    setNotificationCenterOpen((open) => !open);
+    setNotificationCenterOpen((isOpen) => !isOpen);
   };
   const toggleQuickSetting = (key: QuickSettingKey): void =>
     setQuickSettings((currentSettings) => {
@@ -182,13 +260,57 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             dateStyle: "full",
           }).format(now)}
         </div>
-        <FileManager
-          url={START_MENU_PATH}
-          hideLoading
-          isMobileHome
-          loadIconsImmediately
-          readOnly
-        />
+        {homeScreenApps.length > 0 ? (
+          <ul
+            aria-label="Apps auf dem Startbildschirm"
+            className="mobile-home-app-grid"
+          >
+            {homeScreenApps.map(({ icon, id, title }) => (
+              <li key={id}>
+                <button
+                  aria-label={`${title} öffnen`}
+                  className="mobile-home-app"
+                  onClick={() => launchApp(id, icon)}
+                  type="button"
+                >
+                  <img alt="" draggable="false" src={getAppIconUrl(icon)} />
+                  <span>{title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="mobile-home-empty">
+            <p>Dein Startbildschirm ist noch leer.</p>
+            <button onClick={openAppDrawer} type="button">
+              Apps auswählen
+            </button>
+          </div>
+        )}
+        <button
+          aria-label="Appdrawer öffnen"
+          className="mobile-app-drawer-handle"
+          onClick={() => {
+            if (appDrawerGestureTriggeredRef.current) {
+              appDrawerGestureTriggeredRef.current = false;
+              return;
+            }
+
+            openAppDrawer();
+          }}
+          onPointerCancel={() => {
+            appDrawerPointerStartRef.current = undefined;
+          }}
+          onPointerDown={startAppDrawerPull}
+          onPointerMove={moveAppDrawerPull}
+          onPointerUp={() => {
+            appDrawerPointerStartRef.current = undefined;
+          }}
+          type="button"
+        >
+          <span aria-hidden="true" className="app-drawer-handle-indicator" />
+          <span>Alle Apps</span>
+        </button>
       </section>
       <div
         aria-expanded={notificationCenterOpen}
@@ -232,6 +354,68 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
         className="mobile-brightness-overlay"
         style={{ opacity: ((100 - brightness) / 100) * 0.55 }}
       />
+      {appDrawerOpen && (
+        <section
+          aria-label="Appdrawer"
+          aria-modal="true"
+          className="mobile-app-drawer"
+          role="dialog"
+        >
+          <div className="app-drawer-handle-indicator" />
+          <header className="app-drawer-header">
+            <h2>Alle Apps</h2>
+            <button
+              aria-label="Appdrawer schließen"
+              onClick={() => setAppDrawerOpen(false)}
+              type="button"
+            >
+              ×
+            </button>
+          </header>
+          <label className="app-drawer-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              aria-label="Apps suchen"
+              onChange={(event) => setAppSearch(event.target.value)}
+              placeholder="Apps suchen"
+              type="search"
+              value={appSearch}
+            />
+          </label>
+          {filteredApps.length > 0 ? (
+            <ul aria-label="Verfügbare Apps" className="app-drawer-grid">
+              {filteredApps.map(({ icon, id, title }) => {
+                const isOnHomeScreen = homeApps.includes(id);
+
+                return (
+                  <li key={id}>
+                    <button
+                      aria-label={`${title} öffnen`}
+                      className="app-drawer-launch"
+                      onClick={() => launchApp(id, icon)}
+                      type="button"
+                    >
+                      <img alt="" draggable="false" src={getAppIconUrl(icon)} />
+                      <span>{title}</span>
+                    </button>
+                    <button
+                      aria-label={`${title} ${isOnHomeScreen ? "vom" : "zum"} Startbildschirm ${isOnHomeScreen ? "entfernen" : "hinzufügen"}`}
+                      aria-pressed={isOnHomeScreen}
+                      className="app-drawer-pin"
+                      onClick={() => toggleHomeApp(id)}
+                      type="button"
+                    >
+                      {isOnHomeScreen ? "−" : "+"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="app-drawer-empty">Keine Apps gefunden</p>
+          )}
+        </section>
+      )}
       {notificationCenterOpen && (
         <section
           aria-label="Benachrichtigungscenter"
@@ -434,6 +618,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           aria-label="Zurück: App schließen"
           onClick={() => {
             if (notificationCenterOpen) setNotificationCenterOpen(false);
+            else if (appDrawerOpen) setAppDrawerOpen(false);
             else if (recentsOpen) setRecentsOpen(false);
             else if (activeProcessId) closeWithTransition(activeProcessId);
           }}
@@ -445,6 +630,8 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           aria-label="Startbildschirm"
           onClick={() => {
             setRecentsOpen(false);
+            setNotificationCenterOpen(false);
+            setAppDrawerOpen(false);
 
             Object.entries(processes).forEach(([id, process]) => {
               if (
@@ -464,8 +651,9 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           aria-label="App-Umschalter"
           aria-pressed={recentsOpen}
           onClick={() => {
+            setAppDrawerOpen(false);
             setNotificationCenterOpen(false);
-            setRecentsOpen((open) => !open);
+            setRecentsOpen((isOpen) => !isOpen);
           }}
           type="button"
         >
