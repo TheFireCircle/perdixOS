@@ -36,6 +36,36 @@ const StyledDesktop = styled.main`
     width: 100%;
     z-index: -1;
   }
+
+  @media (width <= 760px) {
+    > [aria-label="Desktop"],
+    > nav[aria-label="Taskbar"] {
+      display: none;
+    }
+
+    > div.react-draggable {
+      height: auto !important;
+      inset: calc(28px + env(safe-area-inset-top, 0px)) 0
+        calc(28px + env(safe-area-inset-bottom, 0px)) !important;
+      position: fixed !important;
+      transform: none !important;
+      width: auto !important;
+    }
+
+    > div.react-draggable > section[role="dialog"] {
+      border-radius: 0;
+      box-shadow: none;
+      outline: 0;
+
+      > div {
+        border-radius: 0;
+      }
+    }
+
+    > div.react-draggable > section[role="dialog"] header {
+      display: none;
+    }
+  }
 `;
 
 export default StyledDesktop;

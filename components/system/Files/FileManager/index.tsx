@@ -52,6 +52,7 @@ type FileManagerProps = {
   hideShortcutIcons?: boolean;
   id?: string;
   isDesktop?: boolean;
+  isMobileHome?: boolean;
   isStartMenu?: boolean;
   loadIconsImmediately?: boolean;
   readOnly?: boolean;
@@ -71,6 +72,7 @@ const FileManager: FC<FileManagerProps> = ({
   hideShortcutIcons,
   id,
   isDesktop,
+  isMobileHome,
   isStartMenu,
   loadIconsImmediately,
   readOnly,
@@ -82,11 +84,12 @@ const FileManager: FC<FileManagerProps> = ({
   const { setForegroundId, setViews } = useSessionActions();
   const foregroundId = useForegroundId();
   const sessionView = useView(url);
-  const view = isDesktop
-    ? "icon"
-    : isStartMenu
-      ? "list"
-      : sessionView || DEFAULT_VIEW;
+  const view =
+    isDesktop || isMobileHome
+      ? "icon"
+      : isStartMenu
+        ? "list"
+        : sessionView || DEFAULT_VIEW;
   const isDetailsView = view === "details";
   const { columns: savedColumns = DEFAULT_COLUMNS } = useWindowState(id || "");
   const [columns, setColumns] = useState<ColumnsObject | undefined>(() =>
@@ -269,14 +272,17 @@ const FileManager: FC<FileManagerProps> = ({
         aria-label={
           isDesktop
             ? "Desktop"
-            : isStartMenu
-              ? url === START_MENU_PATH
-                ? "All apps"
-                : `${basename(url)} folder`
-              : basename(url) || ROOT_NAME
+            : isMobileHome
+              ? "Apps"
+              : isStartMenu
+                ? url === START_MENU_PATH
+                  ? "All apps"
+                  : `${basename(url)} folder`
+                : basename(url) || ROOT_NAME
         }
         className={clsx({
           "has-selection": focusedEntries.length > 0,
+          "mobile-home-apps": isMobileHome,
           "multi-select": focusedEntries.length > 1,
         })}
         onKeyDownCapture={loading ? undefined : onKeyDown}
@@ -324,6 +330,7 @@ const FileManager: FC<FileManagerProps> = ({
                   isDesktop={isDesktop}
                   isHeading={isDesktop && files[file].systemShortcut}
                   isLoadingFileManager={isLoading}
+                  isMobileHome={isMobileHome}
                   loadIconImmediately={loadIconsImmediately}
                   name={basename(file, SHORTCUT_EXTENSION)}
                   path={join(url, file)}

@@ -97,6 +97,7 @@ type FileEntryProps = {
   isDesktop?: boolean;
   isHeading?: boolean;
   isLoadingFileManager: boolean;
+  isMobileHome?: boolean;
   loadIconImmediately?: boolean;
   name: string;
   path: string;
@@ -147,6 +148,7 @@ const FileEntry: FC<FileEntryProps> = ({
   isDesktop,
   isHeading,
   isLoadingFileManager,
+  isMobileHome,
   loadIconImmediately,
   name,
   path,
@@ -569,7 +571,7 @@ const FileEntry: FC<FileEntryProps> = ({
         {...(listView &&
           openInFileExplorer && { "aria-expanded": showInFileManager })}
         {...(listView && { ...LIST_VIEW_ANIMATION, as: motion.button })}
-        {...useDoubleClick(doubleClickHandler, listView)}
+        {...useDoubleClick(doubleClickHandler, listView || isMobileHome)}
         {...(openInFileExplorer && fileDrop)}
         {...useFileContextMenu(
           url,
