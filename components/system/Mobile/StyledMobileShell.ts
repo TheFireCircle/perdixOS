@@ -127,12 +127,15 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
 
   .mobile-status {
     background: rgb(8 15 22 / 24%);
+    cursor: grab;
     font-size: 12px;
     font-weight: 600;
     height: calc(28px + env(safe-area-inset-top, 0));
     justify-content: space-between;
     padding: env(safe-area-inset-top, 0) 16px 0;
     top: 0;
+    touch-action: none;
+    user-select: none;
   }
 
   .mobile-status-icons {
@@ -174,6 +177,14 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     height: 12px;
     position: relative;
     width: 14px;
+
+    &[data-enabled] {
+      opacity: 100%;
+    }
+
+    &:not([data-enabled]) {
+      opacity: 45%;
+    }
 
     &::after {
       background: #fff;
@@ -252,6 +263,302 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     pointer-events: auto;
     position: absolute;
     z-index: 100001;
+  }
+
+  .mobile-brightness-overlay {
+    background: #000;
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+    z-index: 99999;
+  }
+
+  .mobile-notification-center {
+    animation: notification-shade-enter 180ms ease-out both;
+    background: #e7ebed;
+    color: #263238;
+    display: flex;
+    flex-direction: column;
+    inset: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0);
+    pointer-events: auto;
+    position: absolute;
+    z-index: 100001;
+  }
+
+  .notification-shade-handle {
+    background: #aab5ba;
+    border-radius: 2px;
+    height: 4px;
+    margin: 8px auto 0;
+    width: 36px;
+  }
+
+  .notification-shade-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    min-height: 82px;
+    padding: 12px 20px;
+  }
+
+  .notification-shade-time {
+    color: #263238;
+    font-size: 28px;
+    font-weight: 400;
+    margin: 0 0 3px;
+  }
+
+  .notification-shade-date {
+    color: #58666d;
+    font-size: 13px;
+    margin: 0;
+  }
+
+  .notification-shade-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .mobile-notification-center .notification-shade-actions button {
+    align-items: center;
+    background: #d5dcdf;
+    border: 0;
+    border-radius: 50%;
+    color: #36464d;
+    display: flex;
+    height: 38px;
+    justify-content: center;
+    padding: 0;
+    width: 38px;
+  }
+
+  .notification-settings-button {
+    font-size: 20px;
+  }
+
+  .notification-close-button {
+    font-size: 24px;
+  }
+
+  .quick-settings {
+    background: #dce2e4;
+    border-bottom: 1px solid #cbd3d6;
+    padding: 10px 14px 14px;
+  }
+
+  .quick-settings-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .quick-setting {
+    align-items: flex-start;
+    background: #f4f6f7;
+    border: 1px solid #d1d9dc;
+    border-radius: 5px;
+    color: #3e5058;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    justify-content: center;
+    min-height: 76px;
+    min-width: 0;
+    padding: 8px;
+    text-align: left;
+
+    &.active {
+      background: #168d87;
+      border-color: #168d87;
+      color: #fff;
+    }
+  }
+
+  .quick-setting-icon {
+    align-items: center;
+    background: rgb(45 62 70 / 10%);
+    border-radius: 50%;
+    display: flex;
+    font-size: 18px;
+    height: 30px;
+    justify-content: center;
+    width: 30px;
+  }
+
+  .quick-setting.active .quick-setting-icon {
+    background: rgb(255 255 255 / 19%);
+  }
+
+  .quick-setting-label {
+    font-size: 11px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .quick-setting-status {
+    font-size: 10px;
+    opacity: 80%;
+  }
+
+  .quick-settings-controls {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    margin-top: 14px;
+  }
+
+  .brightness-control {
+    align-items: center;
+    color: #46575e;
+    display: flex;
+    flex: 1;
+    font-size: 20px;
+    gap: 10px;
+    min-width: 0;
+
+    input {
+      accent-color: #168d87;
+      min-width: 0;
+      width: 100%;
+    }
+  }
+
+  .quick-settings-expand {
+    background: transparent;
+    border: 0;
+    color: #087b76;
+    font: inherit;
+    font-size: 12px;
+    min-height: 40px;
+    padding: 0 4px;
+    white-space: nowrap;
+  }
+
+  .notification-list {
+    flex: 1;
+    padding: 16px 14px 24px;
+  }
+
+  .notification-list-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    margin: 0 2px 10px;
+
+    h2 {
+      color: #34464e;
+      font-size: 14px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .mobile-notification-center & button {
+      background: transparent;
+      border: 0;
+      color: #087b76;
+      font: inherit;
+      font-size: 12px;
+      min-height: 36px;
+      padding: 0 4px;
+    }
+  }
+
+  .notification-list ol {
+    display: grid;
+    gap: 8px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .mobile-notification {
+    align-items: flex-start;
+    background: #fff;
+    border: 1px solid #dce1e3;
+    border-radius: 4px;
+    display: flex;
+    gap: 12px;
+    padding: 14px 12px;
+
+    > img,
+    > .notification-app-icon {
+      border-radius: 50%;
+      flex: 0 0 34px;
+      height: 34px;
+      object-fit: cover;
+      width: 34px;
+    }
+
+    > .notification-app-icon {
+      align-items: center;
+      background: #168d87;
+      color: #fff;
+      display: flex;
+      font-size: 15px;
+      justify-content: center;
+    }
+  }
+
+  .notification-copy {
+    flex: 1;
+    min-width: 0;
+
+    h3 {
+      color: #27383f;
+      font-size: 14px;
+      font-weight: 600;
+      margin: 4px 0;
+    }
+
+    p {
+      color: #53636a;
+      font-size: 13px;
+      line-height: 1.4;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .notification-meta {
+    align-items: center;
+    color: #6a777d;
+    display: flex;
+    font-size: 11px;
+    justify-content: space-between;
+  }
+
+  .notification-dismiss {
+    background: transparent;
+    border: 0;
+    color: #718087;
+    font-size: 20px;
+    height: 30px;
+    line-height: 1;
+    padding: 0;
+    width: 30px;
+  }
+
+  .notification-empty {
+    color: #607077;
+    font-size: 13px;
+    margin: 32px 0;
+    text-align: center;
+  }
+
+  @keyframes notification-shade-enter {
+    from {
+      opacity: 0%;
+      transform: translateY(-12px);
+    }
+
+    to {
+      opacity: 100%;
+      transform: translateY(0);
+    }
   }
 
   .mobile-recents h2 {

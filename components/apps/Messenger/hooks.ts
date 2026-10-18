@@ -30,6 +30,7 @@ import { useProcessesActions } from "contexts/process";
 import directory from "contexts/process/directory";
 import { PACKAGE_DATA, PROCESS_DELIMITER } from "utils/constants";
 import { toSorted } from "utils/functions";
+import { postSystemNotification } from "utils/notifications";
 
 const subscribe = (
   relay: Relay,
@@ -273,6 +274,14 @@ export const useUnreadStatus = (id: string, unreadCount: number): void => {
   useEffect(() => {
     if (unreadCount > currentUnreadCount.current) {
       new Audio(NOTIFICATION_SOUND).play();
+      const newMessageCount = unreadCount - currentUnreadCount.current;
+
+      postSystemNotification({
+        app: "Messenger",
+        icon: "/System/Icons/48x48/messenger.webp",
+        message: `${newMessageCount} neue Nachricht${newMessageCount === 1 ? "" : "en"}`,
+        title: "Neue Nachricht",
+      });
     }
 
     currentUnreadCount.current = unreadCount;
