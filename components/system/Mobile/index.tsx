@@ -36,8 +36,6 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
     ([, { closing, dialogProcess, hasWindow, hideTaskbarEntry }]) =>
       !closing && !dialogProcess && hasWindow !== false && !hideTaskbarEntry
   );
-  const foregroundProcess = processes[activeProcessId];
-
   useEffect(() => {
     const interval = window.setInterval(() => setNow(new Date()), 30_000);
 
@@ -147,11 +145,19 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
         </button>
         <button
           aria-label="Startbildschirm"
-          onClick={() =>
-            foregroundProcess &&
-            !foregroundProcess.minimized &&
-            minimize(activeProcessId)
-          }
+          onClick={() => {
+            setRecentsOpen(false);
+
+            Object.entries(processes).forEach(([id, process]) => {
+              if (
+                !process.closing &&
+                !process.minimized &&
+                process.hasWindow !== false
+              ) {
+                minimize(id);
+              }
+            });
+          }}
           type="button"
         >
           <span aria-hidden="true" className="mobile-home-icon" />
