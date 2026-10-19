@@ -4,8 +4,8 @@ import { useProcesses, useProcessesActions } from "contexts/process";
 import processDirectory from "contexts/process/directory";
 import {
   useForegroundId,
-  useHomeApps,
   useHomeClockWidgetSize,
+  useHomePages,
   useSessionActions,
   useStackOrder,
 } from "contexts/session";
@@ -59,6 +59,26 @@ const AVAILABLE_APPS_BY_ID = new Map(
 const getAppIconUrl = (icon: string): string =>
   `/System/Icons/48x48/${icon.split("/").at(-1) || "unknown.webp"}`;
 
+const getHomeScreenApps = (appIds: string[]): typeof AVAILABLE_APPS =>
+  appIds.flatMap((id) => {
+    const app = AVAILABLE_APPS_BY_ID.get(id);
+
+    return app ? [app] : [];
+  });
+
+const HOME_SWIPE_START_DISTANCE = 10;
+const HOME_SWIPE_PAGE_RATIO = 0.2;
+const HOME_FLICK_DISTANCE = 40;
+const HOME_FLICK_DURATION_MS = 250;
+
+type HomeSwipe = {
+  dragging: boolean;
+  pointerId: number;
+  startTime: number;
+  startX: number;
+  startY: number;
+};
+
 type MobileShellProps = {
   surfaceMode: SurfaceMode;
 };
@@ -69,8 +89,9 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const [appDrawerOpen, setAppDrawerOpen] = useState(false);
   const [appSearch, setAppSearch] = useState("");
   const [widgetPickerOpen, setWidgetPickerOpen] = useState(false);
-  const [widgetButtonVisible, setWidgetButtonVisible] = useState(false);
-  const [widgetButtonPosition, setWidgetButtonPosition] = useState({
+  const [homePage, setHomePage] = useState(0);
+  const [homeMenuVisible, setHomeMenuVisible] = useState(false);
+  const [homeMenuPosition, setHomeMenuPosition] = useState({
     x: 0,
     y: 0,
   });
@@ -87,18 +108,19 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const pulledDownRef = useRef(false);
   const appDrawerPointerStartRef = useRef<number | undefined>(undefined);
   const appDrawerGestureTriggeredRef = useRef(false);
+  const homeRef = useRef<HTMLElement>(null);
+  const homeTrackRef = useRef<HTMLDivElement>(null);
+  const homeSwipeRef = useRef<HomeSwipe | undefined>(undefined);
+  const suppressHomeClickRef = useRef(false);
   const processes = useProcesses();
   const foregroundId = useForegroundId();
   const stackOrder = useStackOrder();
-  const homeApps = useHomeApps();
+  const homePages = useHomePages();
   const homeClockWidgetSize = useHomeClockWidgetSize();
-  const { setHomeApps, setHomeClockWidgetSize } = useSessionActions();
+  const { setHomeClockWidgetSize, setHomePages } = useSessionActions();
   const { closeWithTransition, minimize, open } = useProcessesActions();
-  const homeScreenApps = homeApps.flatMap((id) => {
-    const app = AVAILABLE_APPS_BY_ID.get(id);
-
-    return app ? [app] : [];
-  });
+  const currentHomePage = Math.min(homePage, homePages.length - 1);
+  const homeAppIds = new Set(homePages.flat());
   const normalizedAppSearch = appSearch.trim().toLocaleLowerCase("de");
   const filteredApps = AVAILABLE_APPS.filter(({ title }) =>
     title.toLocaleLowerCase("de").includes(normalizedAppSearch)
@@ -176,15 +198,47 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
     setAppDrawerOpen(false);
   };
   const toggleHomeApp = (id: string): void =>
-    setHomeApps((currentHomeApps) =>
-      currentHomeApps.includes(id)
-        ? currentHomeApps.filter((appId) => appId !== id)
-        : [...currentHomeApps, id]
+    setHomePages((currentPages) =>
+      currentPages.some((pageAppIds) => pageAppIds.includes(id))
+        ? currentPages.map((pageAppIds) =>
+            pageAppIds.filter((appId) => appId !== id)
+          )
+        : currentPages.map((pageAppIds, index) =>
+            index === currentHomePage ? [...pageAppIds, id] : pageAppIds
+          )
     );
+  const goToHomePage = (page: number): void => {
+    setHomePage(Math.min(Math.max(page, 0), homePages.length - 1));
+    setHomeMenuVisible(false);
+    setClockWidgetMenuOpen(false);
+  };
+  const addHomePage = (): void => {
+    setHomePages((currentPages) => [...currentPages, []]);
+    setHomePage(homePages.length);
+    setHomeMenuVisible(false);
+  };
+  const removeHomePage = (): void => {
+    if (currentHomePage === 0) return;
+
+    // Apps of the removed page move to the previous page instead of vanishing
+    setHomePages((currentPages) =>
+      currentPages.flatMap((pageAppIds, index) => {
+        if (index === currentHomePage) return [];
+        if (index === currentHomePage - 1) {
+          return [[...pageAppIds, ...(currentPages[currentHomePage] ?? [])]];
+        }
+
+        return [pageAppIds];
+      })
+    );
+    setHomePage(currentHomePage - 1);
+    setHomeMenuVisible(false);
+  };
   const addClockWidget = (): void => {
     setHomeClockWidgetSize((currentSize) => currentSize || "wide");
+    setHomePage(0);
     setWidgetPickerOpen(false);
-    setWidgetButtonVisible(false);
+    setHomeMenuVisible(false);
   };
   const removeClockWidget = (): void => {
     setHomeClockWidgetSize(undefined);
@@ -193,6 +247,21 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const changeClockWidgetSize = (size: HomeClockWidgetSize): void => {
     setHomeClockWidgetSize(size);
     setClockWidgetMenuOpen(false);
+  };
+  const showHomeMenu = (clientX: number, clientY: number): void => {
+    const bounds = homeRef.current?.getBoundingClientRect();
+
+    if (!bounds) return;
+
+    setHomeMenuPosition({
+      x: Math.min(Math.max(clientX - bounds.left, 100), bounds.width - 100),
+      y: Math.min(
+        Math.max(clientY - bounds.top - 16, 190),
+        bounds.height - 100
+      ),
+    });
+    setClockWidgetMenuOpen(false);
+    setHomeMenuVisible(true);
   };
   const startEmptySpaceLongPress: React.PointerEventHandler<HTMLElement> = (
     event
@@ -204,20 +273,12 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
       return;
     }
 
-    const { clientX, clientY, currentTarget } = event;
+    const { clientX, clientY } = event;
 
-    emptyPressTimerRef.current = window.setTimeout(() => {
-      const bounds = currentTarget.getBoundingClientRect();
-
-      setWidgetButtonPosition({
-        x: Math.min(Math.max(clientX - bounds.left, 64), bounds.width - 64),
-        y: Math.min(
-          Math.max(clientY - bounds.top - 52, 72),
-          bounds.height - 72
-        ),
-      });
-      setWidgetButtonVisible(true);
-    }, 500);
+    emptyPressTimerRef.current = window.setTimeout(
+      () => showHomeMenu(clientX, clientY),
+      500
+    );
   };
   const clearEmptySpaceLongPress = (): void => {
     if (emptyPressTimerRef.current !== undefined) {
@@ -240,17 +301,107 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
       widgetPressTimerRef.current = undefined;
     }
   };
+  const startHomeSwipe: React.PointerEventHandler<HTMLElement> = (event) => {
+    suppressHomeClickRef.current = false;
+
+    if (
+      homeSwipeRef.current ||
+      (event.pointerType === "mouse" && event.button !== 0) ||
+      !homeTrackRef.current?.contains(event.target as Node)
+    ) {
+      return;
+    }
+
+    homeSwipeRef.current = {
+      dragging: false,
+      pointerId: event.pointerId,
+      startTime: event.timeStamp,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  };
+  const moveHomeSwipe: React.PointerEventHandler<HTMLElement> = (event) => {
+    const swipe = homeSwipeRef.current;
+    const track = homeTrackRef.current;
+
+    if (!swipe || !track || swipe.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - swipe.startX;
+
+    if (!swipe.dragging) {
+      const deltaY = event.clientY - swipe.startY;
+
+      if (
+        Math.abs(deltaX) < HOME_SWIPE_START_DISTANCE &&
+        Math.abs(deltaY) < HOME_SWIPE_START_DISTANCE
+      ) {
+        return;
+      }
+
+      // Any real movement cancels pending long presses
+      clearEmptySpaceLongPress();
+      clearClockWidgetLongPress();
+
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        homeSwipeRef.current = undefined;
+        return;
+      }
+
+      swipe.dragging = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      track.classList.add("dragging");
+      setHomeMenuVisible(false);
+      setClockWidgetMenuOpen(false);
+    }
+
+    const pullingPastEdge =
+      (deltaX > 0 && currentHomePage === 0) ||
+      (deltaX < 0 && currentHomePage === homePages.length - 1);
+
+    track.style.setProperty(
+      "--home-drag-offset",
+      `${pullingPastEdge ? deltaX / 3 : deltaX}px`
+    );
+  };
+  const endHomeSwipe: React.PointerEventHandler<HTMLElement> = (event) => {
+    const swipe = homeSwipeRef.current;
+    const track = homeTrackRef.current;
+
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+
+    homeSwipeRef.current = undefined;
+
+    if (!swipe.dragging || !track) return;
+
+    track.classList.remove("dragging");
+    track.style.removeProperty("--home-drag-offset");
+    suppressHomeClickRef.current = true;
+
+    if (event.type === "pointercancel") return;
+
+    const deltaX = event.clientX - swipe.startX;
+    const isFlick =
+      Math.abs(deltaX) > HOME_FLICK_DISTANCE &&
+      event.timeStamp - swipe.startTime < HOME_FLICK_DURATION_MS;
+
+    if (
+      isFlick ||
+      Math.abs(deltaX) > track.clientWidth * HOME_SWIPE_PAGE_RATIO
+    ) {
+      goToHomePage(currentHomePage + (deltaX < 0 ? 1 : -1));
+    }
+  };
   const openAppDrawer = (): void => {
     setNotificationCenterOpen(false);
     setRecentsOpen(false);
     setWidgetPickerOpen(false);
     setClockWidgetMenuOpen(false);
-    setWidgetButtonVisible(false);
+    setHomeMenuVisible(false);
     setAppDrawerOpen(true);
   };
   const openWidgetPicker = (): void => {
     setAppDrawerOpen(false);
-    setWidgetButtonVisible(false);
+    setHomeMenuVisible(false);
     setClockWidgetMenuOpen(false);
     setWidgetPickerOpen(true);
   };
@@ -302,7 +453,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
     setAppDrawerOpen(false);
     setWidgetPickerOpen(false);
     setClockWidgetMenuOpen(false);
-    setWidgetButtonVisible(false);
+    setHomeMenuVisible(false);
     setRecentsOpen(false);
     setNotificationCenterOpen((isOpen) => !isOpen);
   };
@@ -333,139 +484,219 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
 
   return (
     <StyledMobileShell $surfaceMode={surfaceMode}>
-      <section aria-label="Startbildschirm" className="mobile-home">
-        <button
-          aria-label="Widgetoptionen öffnen"
-          className="mobile-home-empty-surface"
-          onContextMenu={(event) => {
+      <section
+        ref={homeRef}
+        aria-label="Startbildschirm"
+        className="mobile-home"
+        onClickCapture={(event) => {
+          if (suppressHomeClickRef.current) {
+            suppressHomeClickRef.current = false;
             event.preventDefault();
-            clearEmptySpaceLongPress();
-            const bounds = event.currentTarget.getBoundingClientRect();
-            const x = event.clientX - bounds.left;
-            const y = event.clientY - bounds.top;
+            event.stopPropagation();
+          }
+        }}
+        onPointerCancel={endHomeSwipe}
+        onPointerDown={startHomeSwipe}
+        onPointerMove={moveHomeSwipe}
+        onPointerUp={endHomeSwipe}
+      >
+        <div
+          ref={homeTrackRef}
+          className="mobile-home-pages"
+          style={{ "--home-page": currentHomePage } as React.CSSProperties}
+        >
+          {homePages.map((pageAppIds, pageIndex) => {
+            const pageApps = getHomeScreenApps(pageAppIds);
 
-            setWidgetButtonPosition({
-              x: Math.min(Math.max(x, 64), bounds.width - 64),
-              y: Math.min(Math.max(y - 52, 72), bounds.height - 72),
-            });
-            setWidgetButtonVisible(true);
-          }}
-          onPointerCancel={clearEmptySpaceLongPress}
-          onPointerDown={startEmptySpaceLongPress}
-          onPointerUp={clearEmptySpaceLongPress}
-          tabIndex={-1}
-          type="button"
-        />
-        {homeClockWidgetSize && (
-          <div className="mobile-clock-widget-wrap">
-            <button
-              aria-label="Uhr- und Datumswidget, lange drücken für Optionen"
-              className={`mobile-clock-widget size-${homeClockWidgetSize}`}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                clearClockWidgetLongPress();
-                setClockWidgetMenuOpen(true);
-              }}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "ContextMenu" ||
-                  (event.shiftKey && event.key === "F10")
-                ) {
-                  event.preventDefault();
-                  setClockWidgetMenuOpen(true);
-                }
-              }}
-              onPointerCancel={clearClockWidgetLongPress}
-              onPointerDown={startClockWidgetLongPress}
-              onPointerUp={clearClockWidgetLongPress}
-              type="button"
-            >
-              <span className="clock-widget-time" suppressHydrationWarning>
-                {formattedTime}
-              </span>
-              <span className="clock-widget-date" suppressHydrationWarning>
-                {formattedDate}
-              </span>
-            </button>
-            {clockWidgetMenuOpen && (
+            return (
               <div
-                aria-label="Uhr-Widgetoptionen"
-                className="clock-widget-context-menu"
-                role="menu"
+                // eslint-disable-next-line react/no-array-index-key
+                key={pageIndex}
+                aria-hidden={pageIndex !== currentHomePage}
+                aria-label={`Seite ${pageIndex + 1} von ${homePages.length}`}
+                className="mobile-home-page"
+                inert={pageIndex !== currentHomePage || undefined}
+                role="group"
               >
                 <button
-                  onClick={removeClockWidget}
-                  role="menuitem"
+                  aria-label="Startbildschirmoptionen öffnen"
+                  className="mobile-home-empty-surface"
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    clearEmptySpaceLongPress();
+                    showHomeMenu(event.clientX, event.clientY);
+                  }}
+                  onPointerCancel={clearEmptySpaceLongPress}
+                  onPointerDown={startEmptySpaceLongPress}
+                  onPointerUp={clearEmptySpaceLongPress}
+                  tabIndex={-1}
                   type="button"
-                >
-                  Widget entfernen
-                </button>
-                <div
-                  aria-label="Widgetgröße"
-                  className="clock-widget-sizes"
-                  role="group"
-                >
-                  {(
-                    [
-                      ["compact", "Kompakt"],
-                      ["wide", "Breit"],
-                      ["large", "Groß"],
-                    ] as const
-                  ).map(([size, label]) => (
+                />
+                {pageIndex === 0 && homeClockWidgetSize && (
+                  <div className="mobile-clock-widget-wrap">
                     <button
-                      key={size}
-                      aria-checked={homeClockWidgetSize === size}
-                      onClick={() => changeClockWidgetSize(size)}
-                      role="menuitemradio"
+                      aria-label="Uhr- und Datumswidget, lange drücken für Optionen"
+                      className={`mobile-clock-widget size-${homeClockWidgetSize}`}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        clearClockWidgetLongPress();
+                        setClockWidgetMenuOpen(true);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "ContextMenu" ||
+                          (event.shiftKey && event.key === "F10")
+                        ) {
+                          event.preventDefault();
+                          setClockWidgetMenuOpen(true);
+                        }
+                      }}
+                      onPointerCancel={clearClockWidgetLongPress}
+                      onPointerDown={startClockWidgetLongPress}
+                      onPointerUp={clearClockWidgetLongPress}
                       type="button"
                     >
-                      {label}
+                      <span
+                        className="clock-widget-time"
+                        suppressHydrationWarning
+                      >
+                        {formattedTime}
+                      </span>
+                      <span
+                        className="clock-widget-date"
+                        suppressHydrationWarning
+                      >
+                        {formattedDate}
+                      </span>
                     </button>
-                  ))}
-                </div>
+                    {clockWidgetMenuOpen && (
+                      <div
+                        aria-label="Uhr-Widgetoptionen"
+                        className="clock-widget-context-menu"
+                        role="menu"
+                      >
+                        <button
+                          onClick={removeClockWidget}
+                          role="menuitem"
+                          type="button"
+                        >
+                          Widget entfernen
+                        </button>
+                        <div
+                          aria-label="Widgetgröße"
+                          className="clock-widget-sizes"
+                          role="group"
+                        >
+                          {(
+                            [
+                              ["compact", "Kompakt"],
+                              ["wide", "Breit"],
+                              ["large", "Groß"],
+                            ] as const
+                          ).map(([size, label]) => (
+                            <button
+                              key={size}
+                              aria-checked={homeClockWidgetSize === size}
+                              onClick={() => changeClockWidgetSize(size)}
+                              role="menuitemradio"
+                              type="button"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {pageApps.length > 0 ? (
+                  <ul
+                    aria-label="Apps auf dem Startbildschirm"
+                    className="mobile-home-app-grid"
+                  >
+                    {pageApps.map(({ icon, id, title }) => (
+                      <li key={id}>
+                        <button
+                          aria-label={`${title} öffnen`}
+                          className="mobile-home-app"
+                          onClick={() => launchApp(id, icon)}
+                          type="button"
+                        >
+                          <img
+                            alt=""
+                            draggable="false"
+                            src={getAppIconUrl(icon)}
+                          />
+                          <span>{title}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="mobile-home-empty">
+                    <p>
+                      {pageIndex === 0
+                        ? "Dein Startbildschirm ist noch leer."
+                        : "Diese Seite ist noch leer."}
+                    </p>
+                    <button onClick={openAppDrawer} type="button">
+                      Apps auswählen
+                    </button>
+                  </div>
+                )}
               </div>
+            );
+          })}
+        </div>
+        {homePages.length > 1 && (
+          <div
+            aria-label="Startbildschirmseiten"
+            className="mobile-home-page-indicator"
+            role="group"
+          >
+            {homePages.map((_, pageIndex) => (
+              <button
+                // eslint-disable-next-line react/no-array-index-key
+                key={pageIndex}
+                aria-current={pageIndex === currentHomePage || undefined}
+                aria-label={`Seite ${pageIndex + 1}`}
+                onClick={() => goToHomePage(pageIndex)}
+                type="button"
+              />
+            ))}
+          </div>
+        )}
+        {homeMenuVisible && (
+          <div
+            aria-label="Startbildschirmoptionen"
+            className="mobile-home-menu"
+            role="menu"
+            style={{
+              left: `${homeMenuPosition.x}px`,
+              top: `${homeMenuPosition.y}px`,
+            }}
+          >
+            <button onClick={openWidgetPicker} role="menuitem" type="button">
+              <span aria-hidden="true" className="home-menu-icon">
+                ▦
+              </span>
+              Widgets
+            </button>
+            <button onClick={addHomePage} role="menuitem" type="button">
+              <span aria-hidden="true" className="home-menu-icon">
+                ＋
+              </span>
+              Seite hinzufügen
+            </button>
+            {currentHomePage > 0 && (
+              <button onClick={removeHomePage} role="menuitem" type="button">
+                <span aria-hidden="true" className="home-menu-icon">
+                  −
+                </span>
+                Seite entfernen
+              </button>
             )}
           </div>
-        )}
-        {homeScreenApps.length > 0 ? (
-          <ul
-            aria-label="Apps auf dem Startbildschirm"
-            className="mobile-home-app-grid"
-          >
-            {homeScreenApps.map(({ icon, id, title }) => (
-              <li key={id}>
-                <button
-                  aria-label={`${title} öffnen`}
-                  className="mobile-home-app"
-                  onClick={() => launchApp(id, icon)}
-                  type="button"
-                >
-                  <img alt="" draggable="false" src={getAppIconUrl(icon)} />
-                  <span>{title}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="mobile-home-empty">
-            <p>Dein Startbildschirm ist noch leer.</p>
-            <button onClick={openAppDrawer} type="button">
-              Apps auswählen
-            </button>
-          </div>
-        )}
-        {widgetButtonVisible && (
-          <button
-            className="mobile-widgets-trigger"
-            onClick={openWidgetPicker}
-            style={{
-              left: `${widgetButtonPosition.x}px`,
-              top: `${Math.max(widgetButtonPosition.y - 52, 72)}px`,
-            }}
-            type="button"
-          >
-            Widgets
-          </button>
         )}
         <button
           aria-label="Appdrawer öffnen"
@@ -607,7 +838,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           {filteredApps.length > 0 ? (
             <ul aria-label="Verfügbare Apps" className="app-drawer-grid">
               {filteredApps.map(({ icon, id, title }) => {
-                const isOnHomeScreen = homeApps.includes(id);
+                const isOnHomeScreen = homeAppIds.has(id);
 
                 return (
                   <li key={id}>
@@ -842,7 +1073,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             if (notificationCenterOpen) setNotificationCenterOpen(false);
             else if (widgetPickerOpen) setWidgetPickerOpen(false);
             else if (clockWidgetMenuOpen) setClockWidgetMenuOpen(false);
-            else if (widgetButtonVisible) setWidgetButtonVisible(false);
+            else if (homeMenuVisible) setHomeMenuVisible(false);
             else if (appDrawerOpen) setAppDrawerOpen(false);
             else if (recentsOpen) setRecentsOpen(false);
             else if (activeProcessId) closeWithTransition(activeProcessId);
@@ -854,12 +1085,21 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
         <button
           aria-label="Startbildschirm"
           onClick={() => {
+            const homeAlreadyVisible =
+              !activeProcessId &&
+              !recentsOpen &&
+              !notificationCenterOpen &&
+              !appDrawerOpen &&
+              !widgetPickerOpen;
+
+            if (homeAlreadyVisible) setHomePage(0);
+
             setRecentsOpen(false);
             setNotificationCenterOpen(false);
             setAppDrawerOpen(false);
             setWidgetPickerOpen(false);
             setClockWidgetMenuOpen(false);
-            setWidgetButtonVisible(false);
+            setHomeMenuVisible(false);
 
             Object.entries(processes).forEach(([id, process]) => {
               if (
@@ -883,7 +1123,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             setNotificationCenterOpen(false);
             setWidgetPickerOpen(false);
             setClockWidgetMenuOpen(false);
-            setWidgetButtonVisible(false);
+            setHomeMenuVisible(false);
             setRecentsOpen((isOpen) => !isOpen);
           }}
           type="button"

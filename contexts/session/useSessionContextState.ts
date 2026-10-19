@@ -67,7 +67,7 @@ const useSessionContextState = (
   const [cursor, setCursor] = useState<string | undefined>();
   const [aiEnabled, setAiEnabled] = useState<boolean>();
   const [closeEffect, setCloseEffect] = useState(DEFAULT_CLOSE_EFFECT);
-  const [homeApps, setHomeApps] = useState<string[]>([]);
+  const [homePages, setHomePages] = useState<string[][]>([[]]);
   const [homeClockWidgetSize, setHomeClockWidgetSize] =
     useState<HomeClockWidgetSize>();
   const [lazyZoo, setLazyZoo] = useState(false);
@@ -216,8 +216,8 @@ const useSessionContextState = (
             clockSource,
             closeEffect,
             cursor,
-            homeApps,
             homeClockWidgetSize,
+            homePages,
             iconPositions,
             lazyZoo,
             recentFiles,
@@ -240,8 +240,8 @@ const useSessionContextState = (
     closeEffect,
     cursor,
     haltSession,
-    homeApps,
     homeClockWidgetSize,
+    homePages,
     iconPositions,
     lazyZoo,
     recentFiles,
@@ -289,7 +289,15 @@ const useSessionContextState = (
         if (session.clockSource) setClockSource(session.clockSource);
         if (session.closeEffect) setCloseEffect(session.closeEffect);
         if (session.cursor) setCursor(session.cursor);
-        if (Array.isArray(session.homeApps)) setHomeApps(session.homeApps);
+        if (
+          Array.isArray(session.homePages) &&
+          session.homePages.length > 0 &&
+          session.homePages.every(Array.isArray)
+        ) {
+          setHomePages(session.homePages);
+        } else if (Array.isArray(session.homeApps)) {
+          setHomePages([session.homeApps]);
+        }
         if (
           session.homeClockWidgetSize === "compact" ||
           session.homeClockWidgetSize === "large" ||
@@ -440,8 +448,8 @@ const useSessionContextState = (
     setCursor,
     setForegroundId,
     setHaltSession,
-    setHomeApps,
     setHomeClockWidgetSize,
+    setHomePages,
     setIconPositions: setAndUpdateIconPositions,
     setRunHistory,
     setSortOrder,
@@ -458,8 +466,8 @@ const useSessionContextState = (
     closeEffect,
     cursor,
     foregroundId,
-    homeApps,
     homeClockWidgetSize,
+    homePages,
     iconPositions,
     recentFiles,
     runHistory,

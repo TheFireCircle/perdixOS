@@ -27,8 +27,8 @@ export const useCursorUrl = (): string | undefined =>
 export const useForegroundId = (): string =>
   useStateSelector((state) => state.foregroundId);
 
-export const useHomeApps = (): string[] =>
-  useStateSelector((state) => state.homeApps);
+export const useHomePages = (): string[][] =>
+  useStateSelector((state) => state.homePages);
 
 export const useHomeClockWidgetSize =
   (): SessionContextState["homeClockWidgetSize"] =>

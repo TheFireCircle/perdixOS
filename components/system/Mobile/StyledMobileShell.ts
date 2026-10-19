@@ -27,12 +27,113 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
         #70473f 100%
       );
     inset: 0;
-    overflow: auto;
-    padding: calc(62px + env(safe-area-inset-top, 0px)) 20px
-      calc(42px + env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
     pointer-events: auto;
     position: absolute;
     z-index: 0;
+  }
+
+  .mobile-home-pages {
+    --home-drag-offset: 0px;
+
+    display: flex;
+    height: 100%;
+    transform: translateX(
+      calc(var(--home-page, 0) * -100% + var(--home-drag-offset))
+    );
+    transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+    &.dragging {
+      transition: none;
+    }
+  }
+
+  .mobile-home-page {
+    flex: 0 0 100%;
+    height: 100%;
+    min-width: 0;
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    padding: calc(62px + env(safe-area-inset-top, 0px)) 20px
+      calc(112px + env(safe-area-inset-bottom, 0px));
+    position: relative;
+    touch-action: pan-y;
+  }
+
+  .mobile-home-page-indicator {
+    bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    left: 50%;
+    position: absolute;
+    transform: translateX(-50%);
+    z-index: 2;
+
+    button {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      display: flex;
+      height: 22px;
+      justify-content: center;
+      min-width: 18px;
+      padding: 0 4px;
+
+      &::after {
+        background: rgb(255 255 255 / 45%);
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgb(0 0 0 / 30%);
+        content: "";
+        height: 7px;
+        transition:
+          background-color 200ms ease,
+          width 200ms ease;
+        width: 7px;
+      }
+
+      &[aria-current="true"]::after {
+        background: #fff;
+        width: 18px;
+      }
+    }
+  }
+
+  .mobile-home-menu {
+    background: #f1f4f2;
+    border-radius: 14px;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 28%);
+    display: grid;
+    min-width: 184px;
+    overflow: hidden;
+    padding: 6px;
+    position: absolute;
+    transform: translate(-50%, -100%);
+    z-index: 3;
+
+    button {
+      align-items: center;
+      background: transparent;
+      border: 0;
+      border-radius: 9px;
+      color: #24443a;
+      display: flex;
+      font: inherit;
+      font-size: 13px;
+      gap: 12px;
+      min-height: 42px;
+      padding: 0 12px;
+      text-align: left;
+
+      &:active {
+        background: rgb(22 141 135 / 14%);
+      }
+    }
+  }
+
+  .home-menu-icon {
+    color: #168d87;
+    font-size: 16px;
+    text-align: center;
+    width: 18px;
   }
 
   .mobile-home-empty-surface {
@@ -148,21 +249,6 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     gap: 2px;
     grid-template-columns: 1fr;
     padding-top: 4px;
-  }
-
-  .mobile-widgets-trigger {
-    background: #f1f4f2;
-    border: 0;
-    border-radius: 18px;
-    box-shadow: 0 4px 14px rgb(0 0 0 / 24%);
-    color: #24443a;
-    font: inherit;
-    font-size: 13px;
-    min-height: 40px;
-    padding: 0 18px;
-    position: absolute;
-    transform: translate(-50%, -50%);
-    z-index: 3;
   }
 
   .mobile-home-app-grid,
