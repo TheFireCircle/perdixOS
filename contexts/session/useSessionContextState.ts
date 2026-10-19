@@ -4,9 +4,10 @@ import { type SetStateAction, useEffect, useRef, useState } from "react";
 import { WALLPAPER_PATHS } from "components/system/Desktop/Wallpapers/constants";
 import { getShortcutInfo } from "components/system/Files/FileEntry/functions";
 import { type SortBy } from "components/system/Files/FileManager/useSortBy";
+import { restoreHomePages } from "components/system/Mobile/homeGrid";
 import { useFileSystemActions, useRootFs } from "contexts/fileSystem";
 import {
-  type HomeClockWidgetSize,
+  type HomeGridItem,
   type IconPositions,
   type RecentFiles,
   type SessionContextActions,
@@ -67,9 +68,7 @@ const useSessionContextState = (
   const [cursor, setCursor] = useState<string | undefined>();
   const [aiEnabled, setAiEnabled] = useState<boolean>();
   const [closeEffect, setCloseEffect] = useState(DEFAULT_CLOSE_EFFECT);
-  const [homePages, setHomePages] = useState<string[][]>([[]]);
-  const [homeClockWidgetSize, setHomeClockWidgetSize] =
-    useState<HomeClockWidgetSize>();
+  const [homePages, setHomePages] = useState<HomeGridItem[][]>([[]]);
   const [lazyZoo, setLazyZoo] = useState(false);
   const [windowStates, setWindowStates] = useState(
     Object.create(null) as WindowStates
@@ -216,7 +215,6 @@ const useSessionContextState = (
             clockSource,
             closeEffect,
             cursor,
-            homeClockWidgetSize,
             homePages,
             iconPositions,
             lazyZoo,
@@ -240,7 +238,6 @@ const useSessionContextState = (
     closeEffect,
     cursor,
     haltSession,
-    homeClockWidgetSize,
     homePages,
     iconPositions,
     lazyZoo,
@@ -289,22 +286,9 @@ const useSessionContextState = (
         if (session.clockSource) setClockSource(session.clockSource);
         if (session.closeEffect) setCloseEffect(session.closeEffect);
         if (session.cursor) setCursor(session.cursor);
-        if (
-          Array.isArray(session.homePages) &&
-          session.homePages.length > 0 &&
-          session.homePages.every(Array.isArray)
-        ) {
-          setHomePages(session.homePages);
-        } else if (Array.isArray(session.homeApps)) {
-          setHomePages([session.homeApps]);
-        }
-        if (
-          session.homeClockWidgetSize === "compact" ||
-          session.homeClockWidgetSize === "large" ||
-          session.homeClockWidgetSize === "wide"
-        ) {
-          setHomeClockWidgetSize(session.homeClockWidgetSize);
-        }
+        const restoredHomePages = restoreHomePages(session);
+
+        if (restoredHomePages) setHomePages(restoredHomePages);
         if (typeof session.aiEnabled === "boolean") {
           setAiEnabled(session.aiEnabled);
         }
@@ -448,7 +432,6 @@ const useSessionContextState = (
     setCursor,
     setForegroundId,
     setHaltSession,
-    setHomeClockWidgetSize,
     setHomePages,
     setIconPositions: setAndUpdateIconPositions,
     setRunHistory,
@@ -466,7 +449,6 @@ const useSessionContextState = (
     closeEffect,
     cursor,
     foregroundId,
-    homeClockWidgetSize,
     homePages,
     iconPositions,
     recentFiles,

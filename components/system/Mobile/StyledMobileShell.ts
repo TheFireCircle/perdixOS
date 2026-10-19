@@ -1,4 +1,8 @@
 import { css, styled } from "styled-components";
+import {
+  HOME_GRID_COLUMNS,
+  HOME_GRID_ROWS,
+} from "components/system/Mobile/homeGrid";
 import { type SurfaceMode } from "contexts/session/types";
 
 const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
@@ -49,15 +53,92 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
   }
 
   .mobile-home-page {
+    display: flex;
     flex: 0 0 100%;
+    flex-direction: column;
     height: 100%;
     min-width: 0;
-    overflow: hidden auto;
-    overscroll-behavior: contain;
-    padding: calc(62px + env(safe-area-inset-top, 0px)) 20px
+    overflow: hidden;
+    padding: calc(72px + env(safe-area-inset-top, 0px)) 12px
       calc(112px + env(safe-area-inset-bottom, 0px));
     position: relative;
-    touch-action: pan-y;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+
+  .mobile-home-grid {
+    display: grid;
+    flex: 1;
+    grid-template-columns: repeat(${HOME_GRID_COLUMNS}, minmax(0, 1fr));
+    grid-template-rows: repeat(${HOME_GRID_ROWS}, minmax(0, 1fr));
+    list-style: none;
+    margin: 0;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .home-grid-item {
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    min-height: 0;
+    min-width: 0;
+    padding: 4px;
+    position: relative;
+
+    &.placeholder {
+      opacity: 25%;
+    }
+  }
+
+  .home-grid-drop-target {
+    background: rgb(255 255 255 / 14%);
+    border: 2px dashed rgb(255 255 255 / 60%);
+    border-radius: 14px;
+    margin: 2px;
+    pointer-events: none;
+
+    &.swap {
+      border-style: solid;
+    }
+  }
+
+  .home-drag-ghost {
+    filter: drop-shadow(0 10px 16px rgb(0 0 0 / 35%));
+    left: 0;
+    opacity: 92%;
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    transform: translate(var(--ghost-x, 0), var(--ghost-y, 0)) scale(1.08);
+    z-index: 5;
+  }
+
+  .home-remove-zone {
+    align-items: center;
+    background: rgb(12 22 25 / 55%);
+    border-radius: 20px;
+    color: #fff;
+    display: flex;
+    font-size: 13px;
+    gap: 8px;
+    height: 38px;
+    left: 50%;
+    padding: 0 18px;
+    pointer-events: none;
+    position: absolute;
+    top: calc(32px + env(safe-area-inset-top, 0px));
+    transform: translateX(-50%);
+    transition:
+      background-color 150ms ease,
+      transform 150ms ease;
+    z-index: 4;
+
+    &.active {
+      background: #c62828;
+      transform: translateX(-50%) scale(1.08);
+    }
   }
 
   .mobile-home-page-indicator {
@@ -107,7 +188,15 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     padding: 6px;
     position: absolute;
     transform: translate(-50%, -100%);
-    z-index: 3;
+    z-index: 6;
+
+    &.above {
+      transform: translate(-50%, calc(-100% - 8px));
+    }
+
+    &.below {
+      transform: translate(-50%, 8px);
+    }
 
     button {
       align-items: center;
@@ -126,7 +215,18 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
       &:active {
         background: rgb(22 141 135 / 14%);
       }
+
+      &:disabled {
+        color: #9aa7a2;
+      }
     }
+  }
+
+  .home-menu-group {
+    border-top: 1px solid rgb(36 68 58 / 14%);
+    display: grid;
+    margin-top: 4px;
+    padding-top: 4px;
   }
 
   .home-menu-icon {
@@ -134,22 +234,6 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     font-size: 16px;
     text-align: center;
     width: 18px;
-  }
-
-  .mobile-home-empty-surface {
-    background: transparent;
-    border: 0;
-    inset: 0;
-    position: absolute;
-    touch-action: none;
-    width: 100%;
-    z-index: 0;
-  }
-
-  .mobile-clock-widget-wrap {
-    margin: 4vh 0 18px;
-    position: relative;
-    z-index: 4;
   }
 
   .clock-widget-time {
@@ -170,91 +254,35 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     border: 1px solid rgb(255 255 255 / 24%);
     border-radius: 8px;
     color: #fff;
+    container-type: size;
     display: flex;
     flex-direction: column;
     font: inherit;
+    height: 100%;
     justify-content: center;
     min-width: 0;
     overflow: hidden;
-    padding: 14px 18px;
+    padding: 10px 16px;
     text-align: left;
-    touch-action: none;
-    user-select: none;
     width: 100%;
 
-    &.size-compact {
-      min-height: 104px;
-      width: min(100%, 190px);
-
-      .clock-widget-time {
-        font-size: 34px;
-      }
+    &.size-compact .clock-widget-time {
+      font-size: min(34px, 40cqh, 22cqw);
     }
 
-    &.size-wide {
-      min-height: 124px;
-
-      .clock-widget-time {
-        font-size: 54px;
-      }
+    &.size-wide .clock-widget-time {
+      font-size: min(54px, 46cqh);
     }
 
     &.size-large {
-      min-height: 190px;
-
       .clock-widget-time {
-        font-size: 70px;
+        font-size: min(72px, 40cqh, 20cqw);
       }
 
       .clock-widget-date {
         font-size: 15px;
       }
     }
-  }
-
-  .clock-widget-context-menu {
-    background: rgb(19 31 35 / 96%);
-    border: 1px solid rgb(255 255 255 / 20%);
-    border-radius: 7px;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
-    display: grid;
-    gap: 4px;
-    left: 10px;
-    min-width: 190px;
-    padding: 8px;
-    position: absolute;
-    top: calc(100% - 12px);
-    z-index: 10;
-
-    button {
-      background: transparent;
-      border: 0;
-      border-radius: 4px;
-      color: #fff;
-      font: inherit;
-      font-size: 13px;
-      min-height: 40px;
-      padding: 0 10px;
-      text-align: left;
-
-      &[aria-checked="true"] {
-        background: rgb(22 141 135 / 45%);
-      }
-    }
-  }
-
-  .clock-widget-sizes {
-    border-top: 1px solid rgb(255 255 255 / 18%);
-    display: grid;
-    gap: 2px;
-    grid-template-columns: 1fr;
-    padding-top: 4px;
-  }
-
-  .mobile-home-app-grid,
-  .mobile-home-empty {
-    position: relative;
-    z-index: 1;
   }
 
   .mobile-widget-picker {
@@ -340,21 +368,6 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     }
   }
 
-  .mobile-home-app-grid,
-  .app-drawer-grid {
-    display: grid;
-    gap: 18px 8px;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .mobile-home-app-grid {
-    padding-top: 4px;
-  }
-
-  .mobile-home-app-grid li,
   .app-drawer-grid li {
     min-width: 0;
     position: relative;
@@ -394,6 +407,10 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
     }
   }
 
+  .home-app-label {
+    white-space: nowrap;
+  }
+
   .app-drawer-launch {
     color: #34464e;
 
@@ -414,8 +431,13 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
 
   .mobile-home-empty {
     color: rgb(255 255 255 / 84%);
-    margin: 12vh auto 0;
+    left: 50%;
     max-width: 260px;
+    position: absolute;
+    top: 24%;
+    transform: translateX(-50%);
+    width: 100%;
+    z-index: 1;
 
     p {
       margin: 0 0 12px;
@@ -541,8 +563,12 @@ const StyledMobileShell = styled.div<{ $surfaceMode: SurfaceMode }>`
 
   .app-drawer-grid {
     align-content: start;
+    display: grid;
     flex: 1;
     gap: 20px 8px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    list-style: none;
+    margin: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 10px 16px 24px;

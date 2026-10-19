@@ -34,6 +34,16 @@ export type ClockSource = "local" | "ntp";
 
 export type HomeClockWidgetSize = "compact" | "large" | "wide";
 
+export type HomeGridItem =
+  | {
+      column: number;
+      id: "clock";
+      row: number;
+      size: HomeClockWidgetSize;
+      type: "widget";
+    }
+  | { column: number; id: string; row: number; type: "app" };
+
 export type SurfaceMode = "auto" | "desktop" | "mobile";
 
 export type RecentFiles = [string, string, string][];
@@ -50,10 +60,10 @@ export type SessionData = {
   clockSource: ClockSource;
   closeEffect: string;
   cursor: string | undefined;
-  // Legacy single page format, migrated to homePages on load
+  // Legacy formats, migrated to homePages on load
   homeApps?: string[];
   homeClockWidgetSize?: HomeClockWidgetSize;
-  homePages?: string[][];
+  homePages?: HomeGridItem[][];
   iconPositions: IconPositions;
   lazyZoo?: boolean;
   recentFiles: RecentFiles;
@@ -69,7 +79,7 @@ export type SessionData = {
 
 export type SessionContextState = SessionData & {
   foregroundId: string;
-  homePages: string[][];
+  homePages: HomeGridItem[][];
   sessionLoaded: boolean;
   stackOrder: string[];
   surfaceMode: SurfaceMode;
@@ -84,10 +94,7 @@ export type SessionContextActions = {
   setCursor: React.Dispatch<React.SetStateAction<string | undefined>>;
   setForegroundId: React.Dispatch<React.SetStateAction<string>>;
   setHaltSession: React.Dispatch<React.SetStateAction<boolean>>;
-  setHomeClockWidgetSize: React.Dispatch<
-    React.SetStateAction<HomeClockWidgetSize | undefined>
-  >;
-  setHomePages: React.Dispatch<React.SetStateAction<string[][]>>;
+  setHomePages: React.Dispatch<React.SetStateAction<HomeGridItem[][]>>;
   setIconPositions: React.Dispatch<React.SetStateAction<IconPositions>>;
   setRunHistory: React.Dispatch<React.SetStateAction<string[]>>;
   setSortOrder: (

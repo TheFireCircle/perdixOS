@@ -1,16 +1,33 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  findHomeItem,
+  findNearestFreeCell,
+  getHomeItemKey,
+  getHomeItemSpan,
+  HOME_GRID_COLUMNS,
+  HOME_GRID_ROWS,
+  HOME_WIDGET_SPANS,
+  type HomeGridCell,
+  type HomeGridPlacement,
+  type HomeGridSpan,
+  isAreaFree,
+  moveHomeItem,
+  placeHomeItem,
+  removeHomeItem,
+  resolveHomeDrop,
+} from "components/system/Mobile/homeGrid";
 import StyledMobileShell from "components/system/Mobile/StyledMobileShell";
 import { useProcesses, useProcessesActions } from "contexts/process";
 import processDirectory from "contexts/process/directory";
 import {
   useForegroundId,
-  useHomeClockWidgetSize,
   useHomePages,
   useSessionActions,
   useStackOrder,
 } from "contexts/session";
 import {
   type HomeClockWidgetSize,
+  type HomeGridItem,
   type SurfaceMode,
 } from "contexts/session/types";
 import { PROCESS_DELIMITER } from "utils/constants";
@@ -59,25 +76,76 @@ const AVAILABLE_APPS_BY_ID = new Map(
 const getAppIconUrl = (icon: string): string =>
   `/System/Icons/48x48/${icon.split("/").at(-1) || "unknown.webp"}`;
 
-const getHomeScreenApps = (appIds: string[]): typeof AVAILABLE_APPS =>
-  appIds.flatMap((id) => {
-    const app = AVAILABLE_APPS_BY_ID.get(id);
-
-    return app ? [app] : [];
-  });
-
+const HOME_LONG_PRESS_MS = 500;
 const HOME_SWIPE_START_DISTANCE = 10;
 const HOME_SWIPE_PAGE_RATIO = 0.2;
 const HOME_FLICK_DISTANCE = 40;
 const HOME_FLICK_DURATION_MS = 250;
+const HOME_DRAG_EDGE_SIZE = 28;
+const HOME_DRAG_EDGE_DELAY_MS = 600;
+const HOME_REMOVE_ZONE_BOTTOM = 76;
 
-type HomeSwipe = {
-  dragging: boolean;
+const WIDGET_SIZE_LABELS = [
+  ["compact", "Kompakt"],
+  ["wide", "Breit"],
+  ["large", "Groß"],
+] as const;
+
+type HomeGesture = {
+  mode: "item" | "page" | "pending";
   pointerId: number;
   startTime: number;
   startX: number;
   startY: number;
 };
+
+type HomeDropTarget = "remove" | { page: number; placement: HomeGridPlacement };
+
+type HomeDrag = {
+  createdPage?: number;
+  edgeDirection: -1 | 0 | 1;
+  edgeTimer?: number;
+  height: number;
+  item: HomeGridItem;
+  key: string;
+  moved: boolean;
+  offsetX: number;
+  offsetY: number;
+  pickupX: number;
+  pickupY: number;
+  target?: HomeDropTarget;
+  width: number;
+  x: number;
+  y: number;
+};
+
+type HomeItemMenu = {
+  key: string;
+  placement: "above" | "below";
+  x: number;
+  y: number;
+};
+
+const getGridAreaStyle = (
+  { column, row }: HomeGridCell,
+  { columns, rows }: HomeGridSpan
+): React.CSSProperties => ({
+  gridColumn: `${column + 1} / span ${columns}`,
+  gridRow: `${row + 1} / span ${rows}`,
+});
+
+const isSameDropTarget = (
+  left?: HomeDropTarget,
+  right?: HomeDropTarget
+): boolean => JSON.stringify(left) === JSON.stringify(right);
+
+const getHomeItemElement = (
+  container: HTMLElement | null,
+  key: string
+): HTMLElement | undefined =>
+  container?.querySelector<HTMLElement>(
+    `[data-home-item="${CSS.escape(key)}"]`
+  ) ?? undefined;
 
 type MobileShellProps = {
   surfaceMode: SurfaceMode;
@@ -95,32 +163,42 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
     x: 0,
     y: 0,
   });
-  const [clockWidgetMenuOpen, setClockWidgetMenuOpen] = useState(false);
+  const [homeItemMenu, setHomeItemMenu] = useState<HomeItemMenu>();
+  const [homeDrag, setHomeDrag] =
+    useState<Pick<HomeDrag, "height" | "item" | "key" | "width">>();
+  const [homeDropTarget, setHomeDropTarget] = useState<HomeDropTarget>();
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [quickSettingsExpanded, setQuickSettingsExpanded] = useState(false);
   const [brightness, setBrightness] = useState(82);
   const [quickSettings, setQuickSettings] = useState(INITIAL_QUICK_SETTINGS);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const notificationIdRef = useRef(0);
-  const emptyPressTimerRef = useRef<number | undefined>(undefined);
-  const widgetPressTimerRef = useRef<number | undefined>(undefined);
   const statusPointerStartRef = useRef<number | undefined>(undefined);
   const pulledDownRef = useRef(false);
   const appDrawerPointerStartRef = useRef<number | undefined>(undefined);
   const appDrawerGestureTriggeredRef = useRef(false);
   const homeRef = useRef<HTMLElement>(null);
   const homeTrackRef = useRef<HTMLDivElement>(null);
-  const homeSwipeRef = useRef<HomeSwipe | undefined>(undefined);
+  const homeGhostRef = useRef<HTMLDivElement | null>(null);
+  const homeGestureRef = useRef<HomeGesture | undefined>(undefined);
+  const homeDragRef = useRef<HomeDrag | undefined>(undefined);
+  const homeLongPressTimerRef = useRef<number | undefined>(undefined);
+  const lastHomePointerTypeRef = useRef("");
   const suppressHomeClickRef = useRef(false);
   const processes = useProcesses();
   const foregroundId = useForegroundId();
   const stackOrder = useStackOrder();
   const homePages = useHomePages();
-  const homeClockWidgetSize = useHomeClockWidgetSize();
-  const { setHomeClockWidgetSize, setHomePages } = useSessionActions();
+  const { setHomePages } = useSessionActions();
   const { closeWithTransition, minimize, open } = useProcessesActions();
   const currentHomePage = Math.min(homePage, homePages.length - 1);
-  const homeAppIds = new Set(homePages.flat());
+  const homeItems = homePages.flat();
+  const homeAppIds = new Set(
+    homeItems.flatMap((item) => (item.type === "app" ? [item.id] : []))
+  );
+  const hasClockWidget = homeItems.some(({ type }) => type === "widget");
+  const homeItemMenuTarget =
+    homeItemMenu && findHomeItem(homePages, homeItemMenu.key)?.item;
   const normalizedAppSearch = appSearch.trim().toLocaleLowerCase("de");
   const filteredApps = AVAILABLE_APPS.filter(({ title }) =>
     title.toLocaleLowerCase("de").includes(normalizedAppSearch)
@@ -197,56 +275,96 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
 
     setAppDrawerOpen(false);
   };
+  const closeHomeMenus = (): void => {
+    setHomeMenuVisible(false);
+    setHomeItemMenu(undefined);
+  };
   const toggleHomeApp = (id: string): void =>
-    setHomePages((currentPages) =>
-      currentPages.some((pageAppIds) => pageAppIds.includes(id))
-        ? currentPages.map((pageAppIds) =>
-            pageAppIds.filter((appId) => appId !== id)
-          )
-        : currentPages.map((pageAppIds, index) =>
-            index === currentHomePage ? [...pageAppIds, id] : pageAppIds
-          )
+    setHomePages(
+      homeAppIds.has(id)
+        ? removeHomeItem(homePages, `app:${id}`)
+        : placeHomeItem(homePages, { id, type: "app" }, currentHomePage).pages
     );
   const goToHomePage = (page: number): void => {
     setHomePage(Math.min(Math.max(page, 0), homePages.length - 1));
-    setHomeMenuVisible(false);
-    setClockWidgetMenuOpen(false);
+    closeHomeMenus();
   };
   const addHomePage = (): void => {
     setHomePages((currentPages) => [...currentPages, []]);
     setHomePage(homePages.length);
-    setHomeMenuVisible(false);
+    closeHomeMenus();
   };
   const removeHomePage = (): void => {
     if (currentHomePage === 0) return;
 
-    // Apps of the removed page move to the previous page instead of vanishing
-    setHomePages((currentPages) =>
-      currentPages.flatMap((pageAppIds, index) => {
-        if (index === currentHomePage) return [];
-        if (index === currentHomePage - 1) {
-          return [[...pageAppIds, ...(currentPages[currentHomePage] ?? [])]];
-        }
+    // Items of the removed page move to the previous page instead of vanishing
+    let pages = homePages.filter((_, page) => page !== currentHomePage);
 
-        return [pageAppIds];
-      })
-    );
+    for (const item of homePages[currentHomePage] ?? []) {
+      ({ pages } = placeHomeItem(pages, item, currentHomePage - 1, item));
+    }
+
+    setHomePages(pages);
     setHomePage(currentHomePage - 1);
-    setHomeMenuVisible(false);
+    closeHomeMenus();
   };
   const addClockWidget = (): void => {
-    setHomeClockWidgetSize((currentSize) => currentSize || "wide");
-    setHomePage(0);
+    if (!hasClockWidget) {
+      const { page, pages } = placeHomeItem(
+        homePages,
+        { id: "clock", size: "wide", type: "widget" },
+        currentHomePage
+      );
+
+      setHomePages(pages);
+      setHomePage(page);
+    }
+
     setWidgetPickerOpen(false);
-    setHomeMenuVisible(false);
+    closeHomeMenus();
   };
-  const removeClockWidget = (): void => {
-    setHomeClockWidgetSize(undefined);
-    setClockWidgetMenuOpen(false);
+  const removeHomeScreenItem = (key: string): void => {
+    setHomePages(removeHomeItem(homePages, key));
+    setHomeItemMenu(undefined);
   };
-  const changeClockWidgetSize = (size: HomeClockWidgetSize): void => {
-    setHomeClockWidgetSize(size);
-    setClockWidgetMenuOpen(false);
+  const getWidgetResizeCell = (
+    widget: HomeGridItem,
+    size: HomeClockWidgetSize
+  ): HomeGridCell | undefined => {
+    const key = getHomeItemKey(widget);
+    const source = findHomeItem(homePages, key);
+
+    if (!source) return undefined;
+
+    const others = homePages[source.page].filter(
+      (item) => getHomeItemKey(item) !== key
+    );
+    const span = HOME_WIDGET_SPANS[size];
+
+    return isAreaFree(others, widget, span)
+      ? { column: widget.column, row: widget.row }
+      : findNearestFreeCell(others, span, widget);
+  };
+  const resizeHomeWidget = (
+    widget: HomeGridItem,
+    size: HomeClockWidgetSize
+  ): void => {
+    const cell = getWidgetResizeCell(widget, size);
+    const key = getHomeItemKey(widget);
+
+    if (cell) {
+      setHomePages(
+        homePages.map((pageItems) =>
+          pageItems.map((item) =>
+            getHomeItemKey(item) === key && item.type === "widget"
+              ? { ...item, ...cell, size }
+              : item
+          )
+        )
+      );
+    }
+
+    setHomeItemMenu(undefined);
   };
   const showHomeMenu = (clientX: number, clientY: number): void => {
     const bounds = homeRef.current?.getBoundingClientRect();
@@ -260,76 +378,303 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
         bounds.height - 100
       ),
     });
-    setClockWidgetMenuOpen(false);
+    setHomeItemMenu(undefined);
     setHomeMenuVisible(true);
   };
-  const startEmptySpaceLongPress: React.PointerEventHandler<HTMLElement> = (
-    event
-  ) => {
-    if (
-      event.target !== event.currentTarget ||
-      (event.pointerType === "mouse" && event.button !== 0)
-    ) {
+  const showHomeItemMenu = (key: string): void => {
+    const element = getHomeItemElement(homeTrackRef.current, key);
+    const bounds = homeRef.current?.getBoundingClientRect();
+
+    if (!element || !bounds) return;
+
+    const rect = element.getBoundingClientRect();
+    const below = rect.top + rect.height / 2 - bounds.top < bounds.height / 2;
+
+    setHomeMenuVisible(false);
+    setHomeItemMenu({
+      key,
+      placement: below ? "below" : "above",
+      x: Math.min(
+        Math.max(rect.left + rect.width / 2 - bounds.left, 100),
+        bounds.width - 100
+      ),
+      y: (below ? rect.bottom : rect.top) - bounds.top,
+    });
+  };
+  const openHomeItemMenuByKeyboard =
+    (key: string): React.KeyboardEventHandler<HTMLButtonElement> =>
+    (event) => {
+      if (
+        event.key === "ContextMenu" ||
+        (event.shiftKey && event.key === "F10")
+      ) {
+        event.preventDefault();
+        showHomeItemMenu(key);
+      }
+    };
+  const clearHomeLongPress = (): void => {
+    if (homeLongPressTimerRef.current !== undefined) {
+      window.clearTimeout(homeLongPressTimerRef.current);
+      homeLongPressTimerRef.current = undefined;
+    }
+  };
+  const positionHomeGhost = (): void => {
+    const drag = homeDragRef.current;
+    const ghost = homeGhostRef.current;
+    const bounds = homeRef.current?.getBoundingClientRect();
+
+    if (!drag || !ghost || !bounds) return;
+
+    ghost.style.setProperty(
+      "--ghost-x",
+      `${drag.x - drag.offsetX - bounds.left}px`
+    );
+    ghost.style.setProperty(
+      "--ghost-y",
+      `${drag.y - drag.offsetY - bounds.top}px`
+    );
+  };
+  const updateHomeDropTarget = (
+    page = currentHomePage,
+    pages = homePages
+  ): void => {
+    const drag = homeDragRef.current;
+    const bounds = homeRef.current?.getBoundingClientRect();
+    // Every page has the same layout, so the first grid serves as reference
+    const grid =
+      homeTrackRef.current?.querySelector<HTMLElement>(".mobile-home-grid");
+
+    if (!drag || !bounds || !grid) return;
+
+    let target: HomeDropTarget | undefined;
+
+    if (drag.y - bounds.top < HOME_REMOVE_ZONE_BOTTOM) {
+      target = "remove";
+    } else {
+      const cellWidth = grid.clientWidth / HOME_GRID_COLUMNS;
+      const cellHeight = grid.clientHeight / HOME_GRID_ROWS;
+      const placement = resolveHomeDrop(pages[page] ?? [], drag.item, {
+        column: Math.round(
+          (drag.x - drag.offsetX - bounds.left - grid.offsetLeft) / cellWidth
+        ),
+        row: Math.round(
+          (drag.y - drag.offsetY - bounds.top - grid.offsetTop) / cellHeight
+        ),
+      });
+
+      target = placement && { page, placement };
+    }
+
+    drag.target = target;
+    setHomeDropTarget((currentTarget) =>
+      isSameDropTarget(currentTarget, target) ? currentTarget : target
+    );
+  };
+  const flipHomePageWhileDragging = (direction: -1 | 1): void => {
+    const drag = homeDragRef.current;
+
+    if (!drag) return;
+
+    drag.edgeTimer = undefined;
+    drag.edgeDirection = 0;
+
+    const nextPage = currentHomePage + direction;
+
+    if (nextPage < 0) return;
+
+    if (nextPage >= homePages.length) {
+      // Dragging past the last page opens a new one, unless it would stay empty
+      const lastPageHasOtherItems = homePages
+        .at(-1)
+        ?.some((item) => getHomeItemKey(item) !== drag.key);
+
+      if (!lastPageHasOtherItems) return;
+
+      drag.createdPage = homePages.length;
+      setHomePages([...homePages, []]);
+    }
+
+    setHomePage(nextPage);
+    updateHomeDropTarget(nextPage, homePages);
+  };
+  const dragHomeItem = (x: number, y: number): void => {
+    const drag = homeDragRef.current;
+    const bounds = homeRef.current?.getBoundingClientRect();
+
+    if (!drag || !bounds) return;
+
+    drag.x = x;
+    drag.y = y;
+    positionHomeGhost();
+
+    if (!drag.moved) {
+      if (
+        Math.hypot(x - drag.pickupX, y - drag.pickupY) <
+        HOME_SWIPE_START_DISTANCE
+      ) {
+        return;
+      }
+
+      drag.moved = true;
+    }
+
+    updateHomeDropTarget();
+
+    const edgeDirection =
+      x - bounds.left < HOME_DRAG_EDGE_SIZE
+        ? -1
+        : bounds.right - x < HOME_DRAG_EDGE_SIZE
+          ? 1
+          : 0;
+
+    if (edgeDirection === drag.edgeDirection) return;
+
+    window.clearTimeout(drag.edgeTimer);
+    drag.edgeTimer =
+      edgeDirection === 0
+        ? undefined
+        : window.setTimeout(
+            () => flipHomePageWhileDragging(edgeDirection),
+            HOME_DRAG_EDGE_DELAY_MS
+          );
+    drag.edgeDirection = edgeDirection;
+  };
+  const pickUpHomeItem = (
+    element: HTMLElement,
+    clientX: number,
+    clientY: number
+  ): void => {
+    homeLongPressTimerRef.current = undefined;
+
+    const gesture = homeGestureRef.current;
+    const key = element.dataset.homeItem;
+    const source = key ? findHomeItem(homePages, key) : undefined;
+
+    if (!gesture || !key || !source) return;
+
+    const rect = element.getBoundingClientRect();
+
+    try {
+      homeRef.current?.setPointerCapture(gesture.pointerId);
+    } catch {
+      // Pointer was released in the meantime
       return;
     }
 
-    const { clientX, clientY } = event;
+    gesture.mode = "item";
+    homeDragRef.current = {
+      edgeDirection: 0,
+      height: rect.height,
+      item: source.item,
+      key,
+      moved: false,
+      offsetX: clientX - rect.left,
+      offsetY: clientY - rect.top,
+      pickupX: clientX,
+      pickupY: clientY,
+      width: rect.width,
+      x: clientX,
+      y: clientY,
+    };
+    suppressHomeClickRef.current = true;
+    closeHomeMenus();
+    setHomeDropTarget(undefined);
+    setHomeDrag({
+      height: rect.height,
+      item: source.item,
+      key,
+      width: rect.width,
+    });
+    navigator.vibrate?.(15);
+  };
+  const finishHomeItemDrag = (commit: boolean): void => {
+    const drag = homeDragRef.current;
 
-    emptyPressTimerRef.current = window.setTimeout(
-      () => showHomeMenu(clientX, clientY),
-      500
-    );
-  };
-  const clearEmptySpaceLongPress = (): void => {
-    if (emptyPressTimerRef.current !== undefined) {
-      window.clearTimeout(emptyPressTimerRef.current);
-      emptyPressTimerRef.current = undefined;
-    }
-  };
-  const startClockWidgetLongPress: React.PointerEventHandler<HTMLElement> = (
-    event
-  ) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
+    homeDragRef.current = undefined;
+    suppressHomeClickRef.current = true;
+    setHomeDrag(undefined);
+    setHomeDropTarget(undefined);
 
-    widgetPressTimerRef.current = window.setTimeout(() => {
-      setClockWidgetMenuOpen(true);
-    }, 500);
-  };
-  const clearClockWidgetLongPress = (): void => {
-    if (widgetPressTimerRef.current !== undefined) {
-      window.clearTimeout(widgetPressTimerRef.current);
-      widgetPressTimerRef.current = undefined;
+    if (!drag) return;
+
+    window.clearTimeout(drag.edgeTimer);
+
+    const { target } = drag;
+    let pages = homePages;
+
+    if (!commit) {
+      // Cancelled drags leave everything in place
+    } else if (!drag.moved) {
+      // Long press without moving opens the item options instead
+      showHomeItemMenu(drag.key);
+    } else if (target === "remove") {
+      pages = removeHomeItem(pages, drag.key);
+    } else if (target) {
+      pages = moveHomeItem(pages, drag.key, target.page, target.placement);
     }
-  };
-  const startHomeSwipe: React.PointerEventHandler<HTMLElement> = (event) => {
-    suppressHomeClickRef.current = false;
 
     if (
-      homeSwipeRef.current ||
+      drag.createdPage !== undefined &&
+      pages[drag.createdPage]?.length === 0
+    ) {
+      pages = pages.filter((_, page) => page !== drag.createdPage);
+    }
+
+    if (pages !== homePages) setHomePages(pages);
+  };
+  const startHomeGesture: React.PointerEventHandler<HTMLElement> = (event) => {
+    suppressHomeClickRef.current = false;
+    lastHomePointerTypeRef.current = event.pointerType;
+
+    if (
+      homeGestureRef.current ||
       (event.pointerType === "mouse" && event.button !== 0) ||
       !homeTrackRef.current?.contains(event.target as Node)
     ) {
       return;
     }
 
-    homeSwipeRef.current = {
-      dragging: false,
+    homeGestureRef.current = {
+      mode: "pending",
       pointerId: event.pointerId,
       startTime: event.timeStamp,
       startX: event.clientX,
       startY: event.clientY,
     };
+
+    const target = event.target as Element;
+    const itemElement = target.closest<HTMLElement>("[data-home-item]");
+    const { clientX, clientY } = event;
+
+    clearHomeLongPress();
+
+    if (itemElement) {
+      homeLongPressTimerRef.current = window.setTimeout(
+        () => pickUpHomeItem(itemElement, clientX, clientY),
+        HOME_LONG_PRESS_MS
+      );
+    } else if (!target.closest("button")) {
+      homeLongPressTimerRef.current = window.setTimeout(() => {
+        homeLongPressTimerRef.current = undefined;
+        showHomeMenu(clientX, clientY);
+      }, HOME_LONG_PRESS_MS);
+    }
   };
-  const moveHomeSwipe: React.PointerEventHandler<HTMLElement> = (event) => {
-    const swipe = homeSwipeRef.current;
+  const moveHomeGesture: React.PointerEventHandler<HTMLElement> = (event) => {
+    const gesture = homeGestureRef.current;
     const track = homeTrackRef.current;
 
-    if (!swipe || !track || swipe.pointerId !== event.pointerId) return;
+    if (!gesture || !track || gesture.pointerId !== event.pointerId) return;
 
-    const deltaX = event.clientX - swipe.startX;
+    if (gesture.mode === "item") {
+      dragHomeItem(event.clientX, event.clientY);
+      return;
+    }
 
-    if (!swipe.dragging) {
-      const deltaY = event.clientY - swipe.startY;
+    const deltaX = event.clientX - gesture.startX;
+
+    if (gesture.mode === "pending") {
+      const deltaY = event.clientY - gesture.startY;
 
       if (
         Math.abs(deltaX) < HOME_SWIPE_START_DISTANCE &&
@@ -339,19 +684,17 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
       }
 
       // Any real movement cancels pending long presses
-      clearEmptySpaceLongPress();
-      clearClockWidgetLongPress();
+      clearHomeLongPress();
 
       if (Math.abs(deltaY) > Math.abs(deltaX)) {
-        homeSwipeRef.current = undefined;
+        homeGestureRef.current = undefined;
         return;
       }
 
-      swipe.dragging = true;
+      gesture.mode = "page";
       event.currentTarget.setPointerCapture(event.pointerId);
       track.classList.add("dragging");
-      setHomeMenuVisible(false);
-      setClockWidgetMenuOpen(false);
+      closeHomeMenus();
     }
 
     const pullingPastEdge =
@@ -363,15 +706,21 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
       `${pullingPastEdge ? deltaX / 3 : deltaX}px`
     );
   };
-  const endHomeSwipe: React.PointerEventHandler<HTMLElement> = (event) => {
-    const swipe = homeSwipeRef.current;
+  const endHomeGesture: React.PointerEventHandler<HTMLElement> = (event) => {
+    const gesture = homeGestureRef.current;
     const track = homeTrackRef.current;
 
-    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
 
-    homeSwipeRef.current = undefined;
+    clearHomeLongPress();
+    homeGestureRef.current = undefined;
 
-    if (!swipe.dragging || !track) return;
+    if (gesture.mode === "item") {
+      finishHomeItemDrag(event.type !== "pointercancel");
+      return;
+    }
+
+    if (gesture.mode !== "page" || !track) return;
 
     track.classList.remove("dragging");
     track.style.removeProperty("--home-drag-offset");
@@ -379,10 +728,10 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
 
     if (event.type === "pointercancel") return;
 
-    const deltaX = event.clientX - swipe.startX;
+    const deltaX = event.clientX - gesture.startX;
     const isFlick =
       Math.abs(deltaX) > HOME_FLICK_DISTANCE &&
-      event.timeStamp - swipe.startTime < HOME_FLICK_DURATION_MS;
+      event.timeStamp - gesture.startTime < HOME_FLICK_DURATION_MS;
 
     if (
       isFlick ||
@@ -391,18 +740,17 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
       goToHomePage(currentHomePage + (deltaX < 0 ? 1 : -1));
     }
   };
+
   const openAppDrawer = (): void => {
     setNotificationCenterOpen(false);
     setRecentsOpen(false);
     setWidgetPickerOpen(false);
-    setClockWidgetMenuOpen(false);
-    setHomeMenuVisible(false);
+    closeHomeMenus();
     setAppDrawerOpen(true);
   };
   const openWidgetPicker = (): void => {
     setAppDrawerOpen(false);
-    setHomeMenuVisible(false);
-    setClockWidgetMenuOpen(false);
+    closeHomeMenus();
     setWidgetPickerOpen(true);
   };
   const startAppDrawerPull: React.PointerEventHandler<HTMLButtonElement> = (
@@ -452,8 +800,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
 
     setAppDrawerOpen(false);
     setWidgetPickerOpen(false);
-    setClockWidgetMenuOpen(false);
-    setHomeMenuVisible(false);
+    closeHomeMenus();
     setRecentsOpen(false);
     setNotificationCenterOpen((isOpen) => !isOpen);
   };
@@ -481,6 +828,44 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
   const formattedDate = new Intl.DateTimeFormat("de-DE", {
     dateStyle: "full",
   }).format(now);
+  const renderHomeItem = (item: HomeGridItem): React.ReactNode => {
+    const key = getHomeItemKey(item);
+
+    if (item.type === "widget") {
+      return (
+        <button
+          aria-label="Uhr- und Datumswidget, lange drücken zum Verschieben"
+          className={`mobile-clock-widget size-${item.size}`}
+          onKeyDown={openHomeItemMenuByKeyboard(key)}
+          type="button"
+        >
+          <span className="clock-widget-time" suppressHydrationWarning>
+            {formattedTime}
+          </span>
+          <span className="clock-widget-date" suppressHydrationWarning>
+            {formattedDate}
+          </span>
+        </button>
+      );
+    }
+
+    const app = AVAILABLE_APPS_BY_ID.get(item.id);
+
+    if (!app) return undefined;
+
+    return (
+      <button
+        aria-label={`${app.title} öffnen`}
+        className="mobile-home-app"
+        onClick={() => launchApp(app.id, app.icon)}
+        onKeyDown={openHomeItemMenuByKeyboard(key)}
+        type="button"
+      >
+        <img alt="" draggable="false" src={getAppIconUrl(app.icon)} />
+        <span className="home-app-label">{app.title}</span>
+      </button>
+    );
+  };
 
   return (
     <StyledMobileShell $surfaceMode={surfaceMode}>
@@ -495,159 +880,118 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             event.stopPropagation();
           }
         }}
-        onPointerCancel={endHomeSwipe}
-        onPointerDown={startHomeSwipe}
-        onPointerMove={moveHomeSwipe}
-        onPointerUp={endHomeSwipe}
+        onPointerCancel={endHomeGesture}
+        onPointerDown={startHomeGesture}
+        onPointerMove={moveHomeGesture}
+        onPointerUp={endHomeGesture}
       >
+        {homeDrag && (
+          <div
+            aria-hidden="true"
+            className={`home-remove-zone${homeDropTarget === "remove" ? " active" : ""}`}
+          >
+            <span>✕</span>
+            Entfernen
+          </div>
+        )}
         <div
           ref={homeTrackRef}
           className="mobile-home-pages"
+          onContextMenu={(event) => {
+            event.preventDefault();
+
+            // Touch long presses are handled by the long press timer
+            if (lastHomePointerTypeRef.current !== "mouse") return;
+
+            const itemElement = (event.target as Element).closest<HTMLElement>(
+              "[data-home-item]"
+            );
+
+            clearHomeLongPress();
+
+            if (itemElement?.dataset.homeItem) {
+              showHomeItemMenu(itemElement.dataset.homeItem);
+            } else {
+              showHomeMenu(event.clientX, event.clientY);
+            }
+          }}
           style={{ "--home-page": currentHomePage } as React.CSSProperties}
         >
-          {homePages.map((pageAppIds, pageIndex) => {
-            const pageApps = getHomeScreenApps(pageAppIds);
+          {homePages.map((pageItems, pageIndex) => (
+            <div
+              // eslint-disable-next-line react/no-array-index-key
+              key={pageIndex}
+              aria-hidden={pageIndex !== currentHomePage}
+              aria-label={`Seite ${pageIndex + 1} von ${homePages.length}`}
+              className="mobile-home-page"
+              inert={pageIndex !== currentHomePage || undefined}
+              role="group"
+            >
+              <ul aria-label="Apps und Widgets" className="mobile-home-grid">
+                {pageItems
+                  .filter(
+                    (item) =>
+                      item.type !== "app" || AVAILABLE_APPS_BY_ID.has(item.id)
+                  )
+                  .map((item) => {
+                    const key = getHomeItemKey(item);
 
-            return (
-              <div
-                // eslint-disable-next-line react/no-array-index-key
-                key={pageIndex}
-                aria-hidden={pageIndex !== currentHomePage}
-                aria-label={`Seite ${pageIndex + 1} von ${homePages.length}`}
-                className="mobile-home-page"
-                inert={pageIndex !== currentHomePage || undefined}
-                role="group"
-              >
-                <button
-                  aria-label="Startbildschirmoptionen öffnen"
-                  className="mobile-home-empty-surface"
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    clearEmptySpaceLongPress();
-                    showHomeMenu(event.clientX, event.clientY);
-                  }}
-                  onPointerCancel={clearEmptySpaceLongPress}
-                  onPointerDown={startEmptySpaceLongPress}
-                  onPointerUp={clearEmptySpaceLongPress}
-                  tabIndex={-1}
-                  type="button"
-                />
-                {pageIndex === 0 && homeClockWidgetSize && (
-                  <div className="mobile-clock-widget-wrap">
-                    <button
-                      aria-label="Uhr- und Datumswidget, lange drücken für Optionen"
-                      className={`mobile-clock-widget size-${homeClockWidgetSize}`}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        clearClockWidgetLongPress();
-                        setClockWidgetMenuOpen(true);
-                      }}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === "ContextMenu" ||
-                          (event.shiftKey && event.key === "F10")
-                        ) {
-                          event.preventDefault();
-                          setClockWidgetMenuOpen(true);
-                        }
-                      }}
-                      onPointerCancel={clearClockWidgetLongPress}
-                      onPointerDown={startClockWidgetLongPress}
-                      onPointerUp={clearClockWidgetLongPress}
-                      type="button"
-                    >
-                      <span
-                        className="clock-widget-time"
-                        suppressHydrationWarning
+                    return (
+                      <li
+                        key={key}
+                        className={`home-grid-item${homeDrag?.key === key ? " placeholder" : ""}`}
+                        data-home-item={key}
+                        style={getGridAreaStyle(item, getHomeItemSpan(item))}
                       >
-                        {formattedTime}
-                      </span>
-                      <span
-                        className="clock-widget-date"
-                        suppressHydrationWarning
-                      >
-                        {formattedDate}
-                      </span>
-                    </button>
-                    {clockWidgetMenuOpen && (
-                      <div
-                        aria-label="Uhr-Widgetoptionen"
-                        className="clock-widget-context-menu"
-                        role="menu"
-                      >
-                        <button
-                          onClick={removeClockWidget}
-                          role="menuitem"
-                          type="button"
-                        >
-                          Widget entfernen
-                        </button>
-                        <div
-                          aria-label="Widgetgröße"
-                          className="clock-widget-sizes"
-                          role="group"
-                        >
-                          {(
-                            [
-                              ["compact", "Kompakt"],
-                              ["wide", "Breit"],
-                              ["large", "Groß"],
-                            ] as const
-                          ).map(([size, label]) => (
-                            <button
-                              key={size}
-                              aria-checked={homeClockWidgetSize === size}
-                              onClick={() => changeClockWidgetSize(size)}
-                              role="menuitemradio"
-                              type="button"
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {pageApps.length > 0 ? (
-                  <ul
-                    aria-label="Apps auf dem Startbildschirm"
-                    className="mobile-home-app-grid"
-                  >
-                    {pageApps.map(({ icon, id, title }) => (
-                      <li key={id}>
-                        <button
-                          aria-label={`${title} öffnen`}
-                          className="mobile-home-app"
-                          onClick={() => launchApp(id, icon)}
-                          type="button"
-                        >
-                          <img
-                            alt=""
-                            draggable="false"
-                            src={getAppIconUrl(icon)}
-                          />
-                          <span>{title}</span>
-                        </button>
+                        {renderHomeItem(item)}
                       </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="mobile-home-empty">
-                    <p>
-                      {pageIndex === 0
-                        ? "Dein Startbildschirm ist noch leer."
-                        : "Diese Seite ist noch leer."}
-                    </p>
-                    <button onClick={openAppDrawer} type="button">
-                      Apps auswählen
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                    );
+                  })}
+                {homeDrag &&
+                  homeDropTarget &&
+                  homeDropTarget !== "remove" &&
+                  homeDropTarget.page === pageIndex && (
+                    <li
+                      aria-hidden="true"
+                      className={`home-grid-drop-target${homeDropTarget.placement.swapKey ? " swap" : ""}`}
+                      style={getGridAreaStyle(
+                        homeDropTarget.placement,
+                        getHomeItemSpan(homeDrag.item)
+                      )}
+                    />
+                  )}
+              </ul>
+              {pageItems.length === 0 && !homeDrag && (
+                <div className="mobile-home-empty">
+                  <p>
+                    {pageIndex === 0
+                      ? "Dein Startbildschirm ist noch leer."
+                      : "Diese Seite ist noch leer."}
+                  </p>
+                  <button onClick={openAppDrawer} type="button">
+                    Apps auswählen
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
+        {homeDrag && (
+          <div
+            ref={(element) => {
+              homeGhostRef.current = element;
+              positionHomeGhost();
+            }}
+            aria-hidden="true"
+            className="home-grid-item home-drag-ghost"
+            style={{
+              height: `${homeDrag.height}px`,
+              width: `${homeDrag.width}px`,
+            }}
+          >
+            {renderHomeItem(homeDrag.item)}
+          </div>
+        )}
         {homePages.length > 1 && (
           <div
             aria-label="Startbildschirmseiten"
@@ -694,6 +1038,68 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
                   −
                 </span>
                 Seite entfernen
+              </button>
+            )}
+          </div>
+        )}
+        {homeItemMenu && homeItemMenuTarget && (
+          <div
+            aria-label={
+              homeItemMenuTarget.type === "widget"
+                ? "Widgetoptionen"
+                : "App-Optionen"
+            }
+            className={`mobile-home-menu ${homeItemMenu.placement}`}
+            role="menu"
+            style={{
+              left: `${homeItemMenu.x}px`,
+              top: `${homeItemMenu.y}px`,
+            }}
+          >
+            {homeItemMenuTarget.type === "widget" ? (
+              <>
+                <button
+                  onClick={() => removeHomeScreenItem(homeItemMenu.key)}
+                  role="menuitem"
+                  type="button"
+                >
+                  <span aria-hidden="true" className="home-menu-icon">
+                    ✕
+                  </span>
+                  Widget entfernen
+                </button>
+                <div
+                  aria-label="Widgetgröße"
+                  className="home-menu-group"
+                  role="group"
+                >
+                  {WIDGET_SIZE_LABELS.map(([size, label]) => (
+                    <button
+                      key={size}
+                      aria-checked={homeItemMenuTarget.size === size}
+                      disabled={!getWidgetResizeCell(homeItemMenuTarget, size)}
+                      onClick={() => resizeHomeWidget(homeItemMenuTarget, size)}
+                      role="menuitemradio"
+                      type="button"
+                    >
+                      <span aria-hidden="true" className="home-menu-icon">
+                        {homeItemMenuTarget.size === size ? "✓" : ""}
+                      </span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={() => removeHomeScreenItem(homeItemMenu.key)}
+                role="menuitem"
+                type="button"
+              >
+                <span aria-hidden="true" className="home-menu-icon">
+                  ✕
+                </span>
+                Vom Startbildschirm entfernen
               </button>
             )}
           </div>
@@ -752,15 +1158,15 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             </div>
             <button
               aria-label={
-                homeClockWidgetSize
+                hasClockWidget
                   ? "Uhr-Widget ist bereits hinzugefügt"
                   : "Uhr-Widget hinzufügen"
               }
-              disabled={Boolean(homeClockWidgetSize)}
+              disabled={hasClockWidget}
               onClick={addClockWidget}
               type="button"
             >
-              {homeClockWidgetSize ? "Hinzugefügt" : "Hinzufügen"}
+              {hasClockWidget ? "Hinzugefügt" : "Hinzufügen"}
             </button>
           </article>
         </section>
@@ -1072,7 +1478,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
           onClick={() => {
             if (notificationCenterOpen) setNotificationCenterOpen(false);
             else if (widgetPickerOpen) setWidgetPickerOpen(false);
-            else if (clockWidgetMenuOpen) setClockWidgetMenuOpen(false);
+            else if (homeItemMenu) setHomeItemMenu(undefined);
             else if (homeMenuVisible) setHomeMenuVisible(false);
             else if (appDrawerOpen) setAppDrawerOpen(false);
             else if (recentsOpen) setRecentsOpen(false);
@@ -1098,7 +1504,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             setNotificationCenterOpen(false);
             setAppDrawerOpen(false);
             setWidgetPickerOpen(false);
-            setClockWidgetMenuOpen(false);
+            setHomeItemMenu(undefined);
             setHomeMenuVisible(false);
 
             Object.entries(processes).forEach(([id, process]) => {
@@ -1122,7 +1528,7 @@ const MobileShell: FC<MobileShellProps> = ({ surfaceMode }) => {
             setAppDrawerOpen(false);
             setNotificationCenterOpen(false);
             setWidgetPickerOpen(false);
-            setClockWidgetMenuOpen(false);
+            setHomeItemMenu(undefined);
             setHomeMenuVisible(false);
             setRecentsOpen((isOpen) => !isOpen);
           }}
